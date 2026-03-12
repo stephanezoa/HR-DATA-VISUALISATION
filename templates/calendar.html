@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Calendrier maintenance {{ year }} — HR Brasserie{% endblock %}
+
+{% block content %}
+
+<section class="card reveal">
+  <div class="analysis-header">
+    <div>
+      <h2 class="analysis-title">📅 Calendrier de maintenance — {{ year }}</h2>
+      <p class="analysis-sub">
+        Vue hebdomadaire du taux d'arrêt par chaîne.
+        Les cellules en rouge dépassent la limite supérieure.
+      </p>
+    </div>
+    <div class="analysis-actions">
+      <a href="{{ url_for('calendar_ical', job_id=job_id) }}"
+         class="button button--outline" download>↓ Export iCal</a>
+      <a href="{{ url_for('inspect_saved_session', job_id=job_id) }}"
+         class="button button--ghost js-page-transition"
+         data-loader-label="Retour à l’analyse…">← Retour</a>
+    </div>
+  </div>
+
+  <!-- Légende -->
+  <div class="cal-legend reveal reveal--delay-1">
+    <div class="cal-legend__item">
+      <span class="cal-swatch cal-swatch--ok"></span> Normal
+    </div>
+    <div class="cal-legend__item">
+      <span class="cal-swatch cal-swatch--warn"></span> Proche limite
+    </div>
+    <div class="cal-legend__item">
+      <span class="cal-swatch cal-swatch--danger"></span> Dépasse limite sup.
+    </div>
+    <div class="cal-legend__item">
+      <span class="cal-swatch cal-swatch--empty"></span> Aucune donnée
+    </div>
+  </div>
+
+  <!-- Grille heatmap scrollable -->
+  <div class="cal-scroll-wrap reveal reveal--delay-2">
+    <div class="cal-grid" style="--week-count: 52;">
+
+      <!-- En-tête semaines -->
+      <div class="cal-header">
+        <div class="cal-label-cell">Chaîne</div>
+        {% for w in weeks %}
+          <div class="cal-week-head">S{{ w }}</div>
+        {% endfor %}
+      </div>
+
+      <!-- Lignes par chaîne -->
+      {% for chain in chains %}
+        {% set lim = limits[chain] %}
+        <div class="cal-row">
+          <div class="cal-chain-label">{{ chain }}</div>
+          {% for v in heatmap[chain] %}
+            {% set week_num = loop.index %}
+            {% if v is none %}
+              <div class="cal-cell cal-cell--empty" title="Sem.{{ week_num }} — pas de données"></div>
+            {% elif lim.upper is not none and v > lim.upper %}
+              <div class="cal-cell cal-cell--danger"
+                   title="Sem.{{ week_num }} — {{ '%.2f'|format(v) }}% (> lim. sup {{ '%.2f'|format(lim.upper) }}%)">
+                <span class="cal-val">{{ '%.1f'|format(v) }}</span>
+              </div>
+            {% elif lim.upper is not none and v > lim.upper * 0.85 %}
+              <div class="cal-cell cal-cell--warn"
+                   title="Sem.{{ week_num }} — {{ '%.2f'|format(v) }}% (proche limite {{ '%.2f'|format(lim.upper) }}%)">
+                <span class="cal-val">{{ '%.1f'|format(v) }}</span>
+              </div>
+            {% else %}
+              <div class="cal-cell cal-cell--ok"
+                   title="Sem.{{ week_num }} — {{ '%.2f'|format(v) }}%">
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+
+    </div>
+  </div>
+</section>
+
+<!-- Table des dépassements -->
+<section class="card reveal reveal--delay-3">
+  <div class="card__header">
+    <h2>Semaines critiques (taux > limite supérieure)</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Chaîne</th>
+          <th class="text-right">Semaine</th>
+          <th class="text-right">Taux (%)</th>
+          <th class="text-right">Limite sup (%)</th>
+          <th class="text-right">Dépassement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set found = namespace(any=false) %}
+        {% for chain in chains %}
+          {% set lim = limits[chain] %}
+          {% if lim.upper is not none %}
+            {% for v in heatmap[chain] %}
+              {% if v is not none and v > lim.upper %}
+                {% set found.any = true %}
+                <tr>
+                  <td><span class="chain-badge">{{ chain }}</span></td>
+                  <td class="text-right">Sem. {{ loop.index }}</td>
+                  <td class="text-right">{{ "%.2f"|format(v) }}</td>
+                  <td class="text-right">{{ "%.2f"|format(lim.upper) }}</td>
+                  <td class="text-right">
+                    <span class="badge badge--danger">+{{ "%.2f"|format(v - lim.upper) }} %</span>
+                  </td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+        {% if not found.any %}
+          <tr>
+            <td colspan="5" class="text-center text-muted">Aucun dépassement détecté pour {{ year }}</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

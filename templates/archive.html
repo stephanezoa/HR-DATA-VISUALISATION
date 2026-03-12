@@ -1,0 +1,688 @@
+{% extends "base.html" %}
+{% block title %}Archive des rapports — HR Brasserie{% endblock %}
+
+{% block content %}
+
+<section class="card archive-header-card">
+  <div class="archive-header">
+    <div>
+      <h2 class="archive-header__title">Archive des rapports</h2>
+      <p class="archive-header__sub" id="archiveSummary">
+        {{ entries | length }} fichier{{ 's' if entries | length != 1 }} archivé{{ 's' if entries | length != 1 }}
+      </p>
+    </div>
+    <div class="archive-header__actions">
+      <button class="button button--outline" id="selectVisibleBtn" type="button">Sélection visible</button>
+      <button class="button button--outline" id="selectAllBtn" type="button">Tout sélectionner</button>
+      <button class="button button--danger" id="deleteVisibleBtn" type="button" disabled>Supprimer les visibles</button>
+      <button class="button button--danger" id="deleteSelectedBtn" type="button" disabled>Supprimer la sélection</button>
+    </div>
+  </div>
+</section>
+
+{% if entries %}
+  <section class="card archive-filters-card">
+    <div class="archive-filters">
+      <label class="field archive-filter archive-filter--search">
+        <span>Recherche</span>
+        <input type="text" id="archiveSearch" placeholder="Nom du fichier, chaîne, catégorie…">
+      </label>
+
+      <label class="field archive-filter">
+        <span>Année</span>
+        <select id="archiveYear">
+          <option value="">Toutes</option>
+        </select>
+      </label>
+
+      <label class="field archive-filter">
+        <span>Mode</span>
+        <select id="archiveMode">
+          <option value="">Tous</option>
+        </select>
+      </label>
+
+      <label class="field archive-filter">
+        <span>Type</span>
+        <select id="archiveKind">
+          <option value="">Tous</option>
+        </select>
+      </label>
+
+      <label class="field archive-filter">
+        <span>Chaîne</span>
+        <select id="archiveChain">
+          <option value="">Toutes</option>
+        </select>
+      </label>
+
+      <label class="field archive-filter">
+        <span>Catégorie</span>
+        <select id="archiveNature">
+          <option value="">Toutes</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="card" id="archiveResultsCard">
+    <div class="archive-table-wrap">
+      <table class="archive-table">
+        <thead>
+          <tr>
+            <th class="col-check"><input type="checkbox" id="checkAll" aria-label="Tout cocher"></th>
+            <th>Fichier</th>
+            <th>Groupe</th>
+            <th>Type</th>
+            <th>Année</th>
+            <th>Créé le</th>
+            <th>Envois</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+          <tr class="archive-row {{ 'archive-row--missing' if not e.exists }}"
+              data-entry-id="{{ e.id }}"
+              data-search="{{ (e.filename ~ ' ' ~ e.group_label ~ ' ' ~ (e.label or '')) | lower }}"
+              data-year="{{ e.year or '' }}"
+              data-mode="{{ e.mode }}"
+              data-kind="{{ e.artifact_kind }}"
+              data-kind-label="{{ e.artifact_label }}"
+              data-chain="{{ e.group_chain }}"
+              data-nature="{{ e.group_nature }}"
+              data-batch="{{ e.batch_id }}">
+            <td class="col-check">
+              <input type="checkbox" class="row-check" value="{{ e.id }}"
+                     aria-label="Sélectionner {{ e.filename }}">
+            </td>
+            <td class="col-name">
+              <div class="arc-filename" title="{{ e.filename }}">{{ e.filename | truncate(48, True, '…') }}</div>
+              <div class="arc-meta">
+                <span class="pill">{{ e.size_human }}</span>
+                {% if e.source_workbook %}
+                  <span class="pill pill--muted">{{ e.source_workbook | truncate(24, True, '…') }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td class="col-group">
+              {% if e.group_chain %}
+                <div class="arc-pills">
+                  <span class="pill pill--chain">{{ e.group_chain }}</span>
+                  <span class="pill pill--nature nature-badge nature-badge--{{ e.group_nature | lower }}">{{ e.group_nature }}</span>
+                </div>
+              {% else %}
+                <span class="badge badge--ok">Global</span>
+              {% endif %}
+            </td>
+            <td class="col-type">
+              <div class="type-stack">
+                <span class="mode-badge mode-badge--{{ e.mode }}">{{ e.artifact_label }}</span>
+                <span class="type-chip">{{ e.mode_label }}</span>
+              </div>
+            </td>
+            <td class="col-year">{{ e.year or '—' }}</td>
+            <td class="col-date">{{ e.created_at | replace('T', ' ') }}</td>
+            <td class="col-email">
+              <span class="email-count {% if e.email_count > 0 %}email-count--sent{% endif %}">
+                {{ e.email_count }}
+              </span>
+              {% if e.last_sent_at %}
+                <div class="arc-submeta">Dernier: {{ e.last_sent_at[:16] | replace('T', ' ') }}</div>
+              {% endif %}
+            </td>
+            <td class="col-actions">
+              {% if e.exists %}
+                <a class="button button--sm button--chain"
+                   href="{{ url_for('download_archive', archive_id=e.id) }}"
+                   title="Télécharger">↓</a>
+                <button class="button button--sm button--outline arc-share-btn"
+                        type="button"
+                        data-name="{{ e.filename }}"
+                        data-share-url="{{ url_for('download_archive', archive_id=e.id) }}"
+                        title="Copier le lien">🔗</button>
+                <button class="button button--sm button--outline arc-email-btn"
+                        data-id="{{ e.id }}" data-name="{{ e.filename }}"
+                        title="Envoyer par email">✉</button>
+              {% else %}
+                <span class="badge badge--warn" title="Fichier manquant sur disque">Manquant</span>
+              {% endif %}
+              {% if e.batch_count > 1 %}
+                <button class="button button--sm button--ghost arc-batch-delete-btn"
+                        data-batch="{{ e.batch_id }}" data-name="{{ e.group_label }}"
+                        title="Supprimer tout le lot">Lot</button>
+              {% endif %}
+              <button class="button button--sm button--danger arc-delete-btn"
+                      data-id="{{ e.id }}" data-name="{{ e.filename }}"
+                      title="Supprimer">✕</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="archive-cards">
+      {% for e in entries %}
+      <article class="arc-card {{ 'arc-card--missing' if not e.exists }}"
+               data-entry-id="{{ e.id }}"
+               data-search="{{ (e.filename ~ ' ' ~ e.group_label ~ ' ' ~ (e.label or '')) | lower }}"
+               data-year="{{ e.year or '' }}"
+               data-mode="{{ e.mode }}"
+               data-kind="{{ e.artifact_kind }}"
+               data-kind-label="{{ e.artifact_label }}"
+               data-chain="{{ e.group_chain }}"
+               data-nature="{{ e.group_nature }}"
+               data-batch="{{ e.batch_id }}">
+        <div class="arc-card__top">
+          <input type="checkbox" class="row-check" value="{{ e.id }}"
+                 aria-label="Sélectionner {{ e.filename }}">
+          <span class="arc-filename">{{ e.filename | truncate(34, True, '…') }}</span>
+        </div>
+        <div class="arc-card__meta">
+          <span>{{ e.artifact_label }}</span>
+          <span>{{ e.mode_label }}</span>
+          <span>{{ e.year or '—' }}</span>
+          <span>{{ e.size_human }}</span>
+          <span>{{ e.created_at[:16] | replace('T', ' ') }}</span>
+        </div>
+        <div class="arc-card__group">
+          {% if e.group_chain %}
+            <span class="pill pill--chain">{{ e.group_chain }}</span>
+            <span class="pill pill--nature nature-badge nature-badge--{{ e.group_nature | lower }}">{{ e.group_nature }}</span>
+          {% else %}
+            <span class="badge badge--ok">Global</span>
+          {% endif %}
+        </div>
+        <div class="arc-card__actions">
+          {% if e.exists %}
+            <a class="button button--sm button--chain"
+               href="{{ url_for('download_archive', archive_id=e.id) }}">↓ Télécharger</a>
+            <button class="button button--sm button--outline arc-share-btn"
+                    type="button"
+                    data-name="{{ e.filename }}"
+                    data-share-url="{{ url_for('download_archive', archive_id=e.id) }}">🔗 Lien</button>
+            <button class="button button--sm button--outline arc-email-btn"
+                    data-id="{{ e.id }}" data-name="{{ e.filename }}">✉ Email</button>
+          {% endif %}
+          {% if e.batch_count > 1 %}
+            <button class="button button--sm button--ghost arc-batch-delete-btn"
+                    data-batch="{{ e.batch_id }}" data-name="{{ e.group_label }}">Lot</button>
+          {% endif %}
+          <button class="button button--sm button--danger arc-delete-btn"
+                  data-id="{{ e.id }}" data-name="{{ e.filename }}">✕ Supprimer</button>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="archive-empty-inline" id="archiveEmptyInline" hidden>
+      Aucun fichier ne correspond au filtre actuel.
+    </div>
+  </section>
+{% else %}
+  <section class="card empty-archive">
+    <div class="empty-archive__icon">📁</div>
+    <h3>Aucun rapport archivé</h3>
+    <p>Les rapports générés apparaîtront ici automatiquement après chaque génération.</p>
+    <a href="{{ url_for('index') }}" class="button button--primary">Importer un classeur →</a>
+  </section>
+{% endif %}
+
+<div class="modal-overlay" id="emailModal" hidden>
+  <div class="modal">
+    <div class="modal__header">
+      <h3 class="modal__title">Envoyer par email</h3>
+      <button class="modal__close" id="emailModalClose" aria-label="Fermer">✕</button>
+    </div>
+    <p class="modal__desc" id="emailModalName"></p>
+    <div class="field">
+      <label class="field__label" for="arcEmailTo">Destinataires</label>
+      <div class="email-presets email-presets--compact" id="archiveEmailPresetList">
+        {% for email in ui_default_recipients %}
+          <button class="email-preset" type="button" data-email="{{ email }}">{{ email }}</button>
+        {% endfor %}
+      </div>
+      <input type="email" id="arcEmailTo" multiple class="input"
+             placeholder="a@exemple.com, b@exemple.com">
+    </div>
+    <div class="modal__actions">
+      <button class="button button--primary" id="arcEmailSend" type="button">Envoyer</button>
+      <button class="button button--ghost" id="emailModalCancel" type="button">Annuler</button>
+    </div>
+    <p class="modal__feedback" id="arcEmailFeedback" aria-live="polite"></p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteModal" hidden>
+  <div class="modal modal--danger">
+    <div class="modal__header">
+      <h3 class="modal__title">Confirmer la suppression</h3>
+      <button class="modal__close" id="deleteModalClose" aria-label="Fermer">✕</button>
+    </div>
+    <p class="modal__desc" id="deleteModalMsg"></p>
+    <div class="modal__actions">
+      <button class="button button--danger" id="deleteConfirmBtn" type="button">Supprimer</button>
+      <button class="button button--ghost" id="deleteModalCancel" type="button">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var defaultRecipients = document.body.dataset.defaultRecipients || '';
+  var summaryEl = document.getElementById('archiveSummary');
+  var emptyInline = document.getElementById('archiveEmptyInline');
+  var checkAll = document.getElementById('checkAll');
+  var selectAllBtn = document.getElementById('selectAllBtn');
+  var selectVisibleBtn = document.getElementById('selectVisibleBtn');
+  var deleteVisibleBtn = document.getElementById('deleteVisibleBtn');
+  var deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+
+  var filters = {
+    search: document.getElementById('archiveSearch'),
+    year: document.getElementById('archiveYear'),
+    mode: document.getElementById('archiveMode'),
+    kind: document.getElementById('archiveKind'),
+    chain: document.getElementById('archiveChain'),
+    nature: document.getElementById('archiveNature')
+  };
+
+  var emailModal = document.getElementById('emailModal');
+  var emailModalClose = document.getElementById('emailModalClose');
+  var emailModalCancel = document.getElementById('emailModalCancel');
+  var emailModalName = document.getElementById('emailModalName');
+  var arcEmailTo = document.getElementById('arcEmailTo');
+  var arcEmailSend = document.getElementById('arcEmailSend');
+  var arcEmailFeedback = document.getElementById('arcEmailFeedback');
+  var archiveEmailPresetList = document.getElementById('archiveEmailPresetList');
+  var currentEmailId = null;
+
+  var deleteModal = document.getElementById('deleteModal');
+  var deleteModalMsg = document.getElementById('deleteModalMsg');
+  var deleteConfirm = document.getElementById('deleteConfirmBtn');
+  var deleteMClose = document.getElementById('deleteModalClose');
+  var deleteMCancel = document.getElementById('deleteModalCancel');
+  var pendingDelete = null;
+
+  if (!document.querySelector('.archive-row')) {
+    return;
+  }
+
+  function rowEntries() {
+    return Array.from(document.querySelectorAll('.archive-row'));
+  }
+
+  function cardEntries() {
+    return Array.from(document.querySelectorAll('.arc-card'));
+  }
+
+  function pairNode(entryId, selector) {
+    return document.querySelector(selector + '[data-entry-id="' + entryId + '"]');
+  }
+
+  function syncCheckboxes(entryId, checked) {
+    document.querySelectorAll('.row-check[value="' + entryId + '"]').forEach(function (cb) {
+      cb.checked = checked;
+    });
+  }
+
+  function visibleRows() {
+    return rowEntries().filter(function (row) {
+      return !row.hidden;
+    });
+  }
+
+  function visibleIds() {
+    return visibleRows().map(function (row) { return row.dataset.entryId; });
+  }
+
+  function uniqueCheckedIds() {
+    var ids = new Set();
+    document.querySelectorAll('.row-check:checked').forEach(function (cb) {
+      ids.add(cb.value);
+    });
+    return Array.from(ids);
+  }
+
+  function updateSummary() {
+    var visible = visibleRows().length;
+    var total = rowEntries().length;
+    if (summaryEl) {
+      summaryEl.textContent = visible + ' fichier' + (visible > 1 ? 's' : '')
+        + ' visible' + (visible > 1 ? 's' : '') + ' sur ' + total;
+    }
+    if (emptyInline) {
+      emptyInline.hidden = visible !== 0;
+    }
+  }
+
+  function updateActionButtons() {
+    var visible = visibleIds();
+    var checked = uniqueCheckedIds();
+    deleteSelectedBtn.disabled = checked.length === 0;
+    deleteSelectedBtn.textContent = checked.length
+      ? 'Supprimer (' + checked.length + ')'
+      : 'Supprimer la sélection';
+    deleteVisibleBtn.disabled = visible.length === 0;
+    deleteVisibleBtn.textContent = visible.length
+      ? 'Supprimer visibles (' + visible.length + ')'
+      : 'Supprimer les visibles';
+
+    if (checkAll) {
+      var visibleChecks = document.querySelectorAll('.archive-row:not([hidden]) .row-check');
+      var allVisibleChecked = visibleChecks.length > 0 && Array.from(visibleChecks).every(function (cb) {
+        return cb.checked;
+      });
+      checkAll.checked = allVisibleChecked;
+    }
+  }
+
+  function addOption(select, value, label) {
+    if (!value) return;
+    var exists = Array.from(select.options).some(function (opt) { return opt.value === value; });
+    if (!exists) {
+      var option = document.createElement('option');
+      option.value = value;
+      option.textContent = label || value;
+      select.appendChild(option);
+    }
+  }
+
+  function initFilterOptions() {
+    rowEntries().forEach(function (row) {
+      addOption(filters.year, row.dataset.year);
+      addOption(filters.mode, row.dataset.mode);
+      addOption(filters.kind, row.dataset.kind, row.dataset.kindLabel);
+      addOption(filters.chain, row.dataset.chain);
+      addOption(filters.nature, row.dataset.nature);
+    });
+  }
+
+  function matchesFilters(dataset) {
+    var search = (filters.search.value || '').trim().toLowerCase();
+    if (search && !(dataset.search || '').includes(search)) return false;
+    if (filters.year.value && dataset.year !== filters.year.value) return false;
+    if (filters.mode.value && dataset.mode !== filters.mode.value) return false;
+    if (filters.kind.value && dataset.kind !== filters.kind.value) return false;
+    if (filters.chain.value && dataset.chain !== filters.chain.value) return false;
+    if (filters.nature.value && dataset.nature !== filters.nature.value) return false;
+    return true;
+  }
+
+  function applyFilters() {
+    rowEntries().forEach(function (row) {
+      var visible = matchesFilters(row.dataset);
+      row.hidden = !visible;
+      var card = pairNode(row.dataset.entryId, '.arc-card');
+      if (card) card.hidden = !visible;
+      if (!visible) syncCheckboxes(row.dataset.entryId, false);
+    });
+    updateSummary();
+    updateActionButtons();
+  }
+
+  function openEmailModal(id, name) {
+    currentEmailId = id;
+    emailModalName.textContent = name;
+    arcEmailTo.value = defaultRecipients;
+    arcEmailFeedback.textContent = '';
+    arcEmailFeedback.className = 'modal__feedback';
+    emailModal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    syncPresetButtons();
+    arcEmailTo.focus();
+  }
+
+  function parseRecipients(value) {
+    return (value || '')
+      .split(/[,\n;]+/)
+      .map(function (item) { return item.trim(); })
+      .filter(Boolean);
+  }
+
+  function formatRecipients(list) {
+    return list.join(', ');
+  }
+
+  function toggleRecipient(email) {
+    var recipients = parseRecipients(arcEmailTo.value);
+    var index = recipients.indexOf(email);
+    if (index >= 0) {
+      recipients.splice(index, 1);
+    } else {
+      recipients.push(email);
+    }
+    arcEmailTo.value = formatRecipients(recipients);
+    syncPresetButtons();
+  }
+
+  function syncPresetButtons() {
+    if (!archiveEmailPresetList) return;
+    var active = parseRecipients(arcEmailTo.value);
+    archiveEmailPresetList.querySelectorAll('.email-preset').forEach(function (btn) {
+      btn.classList.toggle('is-active', active.indexOf(btn.dataset.email) >= 0);
+    });
+  }
+
+  function closeEmailModal() {
+    emailModal.hidden = true;
+    document.body.style.overflow = '';
+    currentEmailId = null;
+  }
+
+  function openDeleteModal(payload, label) {
+    pendingDelete = payload;
+    deleteModalMsg.textContent = 'Supprimer ' + label + ' ? Cette action est irréversible.';
+    deleteModal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDeleteModal() {
+    deleteModal.hidden = true;
+    document.body.style.overflow = '';
+    pendingDelete = null;
+  }
+
+  function removeEntries(ids) {
+    ids.forEach(function (id) {
+      var row = pairNode(id, '.archive-row');
+      var card = pairNode(id, '.arc-card');
+      if (row) row.remove();
+      if (card) card.remove();
+    });
+    updateSummary();
+    updateActionButtons();
+  }
+
+  if (checkAll) {
+    checkAll.addEventListener('change', function () {
+      visibleIds().forEach(function (id) {
+        syncCheckboxes(id, checkAll.checked);
+      });
+      updateActionButtons();
+    });
+  }
+
+  selectVisibleBtn.addEventListener('click', function () {
+    visibleIds().forEach(function (id) { syncCheckboxes(id, true); });
+    updateActionButtons();
+  });
+
+  selectAllBtn.addEventListener('click', function () {
+    var check = uniqueCheckedIds().length !== rowEntries().length;
+    rowEntries().forEach(function (row) {
+      syncCheckboxes(row.dataset.entryId, check);
+    });
+    updateActionButtons();
+  });
+
+  document.addEventListener('change', function (e) {
+    if (e.target.classList.contains('row-check')) {
+      syncCheckboxes(e.target.value, e.target.checked);
+      updateActionButtons();
+    }
+  });
+
+  Object.keys(filters).forEach(function (key) {
+    filters[key].addEventListener('input', applyFilters);
+    filters[key].addEventListener('change', applyFilters);
+  });
+
+  emailModalClose.addEventListener('click', closeEmailModal);
+  emailModalCancel.addEventListener('click', closeEmailModal);
+  emailModal.addEventListener('click', function (e) {
+    if (e.target === emailModal) closeEmailModal();
+  });
+
+  arcEmailSend.addEventListener('click', function () {
+    if (!currentEmailId) return;
+    var to = (arcEmailTo.value || '').trim();
+    if (!to) {
+      arcEmailFeedback.textContent = 'Saisissez au moins une adresse.';
+      arcEmailFeedback.className = 'modal__feedback modal__feedback--error';
+      return;
+    }
+    arcEmailSend.disabled = true;
+    arcEmailSend.textContent = '…';
+    var fd = new FormData();
+    fd.append('to', to);
+    fetch('/api/send-email/archive/' + currentEmailId, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        arcEmailSend.disabled = false;
+        arcEmailSend.textContent = 'Envoyer';
+        if (data.ok) {
+          arcEmailFeedback.textContent = '✓ ' + data.message;
+          arcEmailFeedback.className = 'modal__feedback modal__feedback--ok';
+          setTimeout(closeEmailModal, 1500);
+        } else {
+          arcEmailFeedback.textContent = '✕ ' + (data.error || 'Erreur inconnue.');
+          arcEmailFeedback.className = 'modal__feedback modal__feedback--error';
+        }
+      })
+      .catch(function () {
+        arcEmailSend.disabled = false;
+        arcEmailSend.textContent = 'Envoyer';
+        arcEmailFeedback.textContent = '✕ Erreur réseau.';
+        arcEmailFeedback.className = 'modal__feedback modal__feedback--error';
+      });
+  });
+
+  if (archiveEmailPresetList) {
+    archiveEmailPresetList.addEventListener('click', function (e) {
+      var btn = e.target.closest('.email-preset');
+      if (!btn) return;
+      toggleRecipient(btn.dataset.email || '');
+    });
+    arcEmailTo.addEventListener('input', syncPresetButtons);
+  }
+
+  deleteMClose.addEventListener('click', closeDeleteModal);
+  deleteMCancel.addEventListener('click', closeDeleteModal);
+  deleteModal.addEventListener('click', function (e) {
+    if (e.target === deleteModal) closeDeleteModal();
+  });
+
+  deleteConfirm.addEventListener('click', function () {
+    if (!pendingDelete) return;
+    deleteConfirm.disabled = true;
+    deleteConfirm.textContent = '…';
+
+    var url = pendingDelete.url;
+    var body = JSON.stringify(pendingDelete.payload);
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        deleteConfirm.disabled = false;
+        deleteConfirm.textContent = 'Supprimer';
+        if (!data.ok) {
+          alert('Erreur : ' + (data.error || 'Suppression échouée.'));
+          return;
+        }
+        if (pendingDelete.type === 'batch') {
+          removeEntries(rowEntries()
+            .filter(function (row) { return row.dataset.batch === pendingDelete.payload.batch_id; })
+            .map(function (row) { return row.dataset.entryId; }));
+        } else if (pendingDelete.type === 'bulk') {
+          removeEntries(pendingDelete.payload.ids);
+        } else {
+          removeEntries([pendingDelete.payload.id]);
+        }
+        closeDeleteModal();
+      })
+      .catch(function () {
+        deleteConfirm.disabled = false;
+        deleteConfirm.textContent = 'Supprimer';
+        alert('Erreur réseau.');
+      });
+  });
+
+  document.addEventListener('click', function (e) {
+    var emailBtn = e.target.closest('.arc-email-btn');
+    var shareBtn = e.target.closest('.arc-share-btn');
+    var deleteBtn = e.target.closest('.arc-delete-btn');
+    var batchBtn = e.target.closest('.arc-batch-delete-btn');
+
+    if (emailBtn) {
+      openEmailModal(emailBtn.dataset.id, emailBtn.dataset.name);
+    }
+    if (shareBtn) {
+      var rawUrl = shareBtn.dataset.shareUrl || '';
+      var shareUrl = new URL(rawUrl, window.location.origin).href;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl)
+          .then(function () {
+            shareBtn.textContent = '✓ Copié';
+            setTimeout(function () {
+              shareBtn.textContent = shareBtn.closest('.arc-card') ? '🔗 Lien' : '🔗';
+            }, 1400);
+          })
+          .catch(function () {
+            alert('Impossible de copier le lien : ' + shareUrl);
+          });
+      } else {
+        alert('Lien à partager : ' + shareUrl);
+      }
+    }
+    if (deleteBtn) {
+      openDeleteModal(
+        { type: 'single', url: '/api/archive/delete', payload: { id: deleteBtn.dataset.id } },
+        '« ' + deleteBtn.dataset.name + ' »'
+      );
+    }
+    if (batchBtn) {
+      openDeleteModal(
+        { type: 'batch', url: '/api/archive/delete-batch', payload: { batch_id: batchBtn.dataset.batch } },
+        'tout le lot « ' + batchBtn.dataset.name + ' »'
+      );
+    }
+  });
+
+  deleteSelectedBtn.addEventListener('click', function () {
+    var ids = uniqueCheckedIds();
+    if (!ids.length) return;
+    openDeleteModal(
+      { type: 'bulk', url: '/api/archive/delete-bulk', payload: { ids: ids } },
+      ids.length + ' fichier(s) sélectionné(s)'
+    );
+  });
+
+  deleteVisibleBtn.addEventListener('click', function () {
+    var ids = visibleIds();
+    if (!ids.length) return;
+    openDeleteModal(
+      { type: 'bulk', url: '/api/archive/delete-bulk', payload: { ids: ids } },
+      ids.length + ' fichier(s) visible(s)'
+    );
+  });
+
+  initFilterOptions();
+  applyFilters();
+  syncPresetButtons();
+}());
+</script>
+
+{% endblock %}

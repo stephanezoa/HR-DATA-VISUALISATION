@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Importer un classeur — HR Brasserie{% endblock %}
+
+{% block content %}
+  <section class="card upload-card">
+    <div class="card__header">
+      <h2>Charger le classeur Excel</h2>
+      <p>
+        Sélectionnez votre fichier <strong>ANALYSE ARRETS MES</strong> (.xlsx ou .xlsm).
+        Le moteur reconnaît automatiquement les feuilles <strong>Base</strong>,
+        <strong>Limites</strong>, <strong>TCD</strong> et <strong>Graphiques</strong>.
+      </p>
+    </div>
+
+    <form action="{{ url_for('inspect_workbook') }}" method="post"
+          enctype="multipart/form-data" class="form-grid js-page-loader-form"
+          data-loader-label="Analyse du classeur Excel…">
+      <label class="field field--file drop-zone" id="dropZone">
+        <span class="drop-zone__icon">📂</span>
+        <span class="drop-zone__label">Glisser-déposer ou cliquer pour sélectionner</span>
+        <span class="drop-zone__hint">.xlsx · .xlsm · max {{ max_mb }} Mo</span>
+        <input type="file" name="workbook" accept=".xlsx,.xlsm" required id="fileInput">
+      </label>
+
+      <div class="file-preview" id="filePreview" aria-live="polite"></div>
+
+      <button type="submit" class="button button--primary button--lg">
+        Inspecter le fichier →
+      </button>
+    </form>
+  </section>
+
+  <section class="card info-grid">
+    <div class="info-block">
+      <div class="info-block__icon">📊</div>
+      <h3>Graphiques reproduits</h3>
+      <ul class="plain-list">
+        <li>Page de <strong>synthèse groupe</strong> avec plusieurs équipements</li>
+        <li>Dashboard <strong>par machine</strong> avec taux, TRP, TRG et cumulatif</li>
+        <li>Export PDF fidèle, structuré et archivable</li>
+      </ul>
+    </div>
+    <div class="info-block">
+      <div class="info-block__icon">📁</div>
+      <h3>Modes d'export</h3>
+      <ul class="plain-list">
+        <li>Document complet, ZIP par groupe, export mixte</li>
+        <li>Découpage par chaîne, catégorie ou groupe</li>
+        <li>Historique conservé après génération</li>
+      </ul>
+    </div>
+    <div class="info-block">
+      <div class="info-block__icon">⚙️</div>
+      <h3>Workflow</h3>
+      <ul class="plain-list">
+        <li>Import du classeur</li>
+        <li>Inspection et filtres avancés</li>
+        <li>Génération en arrière-plan avec reprise possible</li>
+      </ul>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var input = document.getElementById('fileInput');
+      var preview = document.getElementById('filePreview');
+      var zone = document.getElementById('dropZone');
+      var form = zone.closest('form');
+      var submitBtn = form.querySelector('button[type="submit"]');
+
+      function showFile(file) {
+        if (!file) return;
+        var mb = (file.size / 1024 / 1024).toFixed(2);
+        preview.innerHTML = '<span class="file-chip">📄 ' + file.name + ' — ' + mb + ' Mo</span>';
+        zone.classList.add('drop-zone--selected');
+      }
+
+      input.addEventListener('change', function () { showFile(this.files[0]); });
+
+      zone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        zone.classList.add('drop-zone--hover');
+      });
+      zone.addEventListener('dragleave', function () {
+        zone.classList.remove('drop-zone--hover');
+      });
+      zone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        zone.classList.remove('drop-zone--hover');
+        var file = e.dataTransfer.files[0];
+        if (file) {
+          var dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          showFile(file);
+        }
+      });
+
+      form.addEventListener('submit', function () {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Chargement en cours…';
+        submitBtn.classList.add('button--loading');
+      });
+    }());
+  </script>
+{% endblock %}

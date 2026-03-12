@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}Export des rapports — {{ filename }}{% endblock %}
+
+{% block content %}
+
+  <!-- ── Outils d'analyse ──────────────────────────────────────────────────── -->
+  <section class="card analysis-toolbar-card">
+    <div class="card__header">
+      <h2>Outils d'analyse</h2>
+      <p>Explorez vos données en profondeur ou exportez vers Excel.</p>
+    </div>
+    <div class="analysis-toolbar">
+      <a href="{{ url_for('pareto', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture de Pareto…">
+        <span class="analysis-btn__icon">📊</span>
+        <span>
+          <strong>Analyse Pareto</strong>
+          <small>Top machines causant 80 % des arrêts</small>
+        </span>
+      </a>
+      <a href="{{ url_for('trend', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture de Tendance…">
+        <span class="analysis-btn__icon">📈</span>
+        <span>
+          <strong>Tendance</strong>
+          <small>Évolution multi-années + régression</small>
+        </span>
+      </a>
+      <a href="{{ url_for('calendar', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture du Calendrier…">
+        <span class="analysis-btn__icon">📅</span>
+        <span>
+          <strong>Calendrier</strong>
+          <small>Vue hebdomadaire + export iCal</small>
+        </span>
+      </a>
+      <form action="{{ url_for('export_excel', job_id=job_id) }}" method="post" style="margin:0">
+        <button type="submit" class="analysis-btn analysis-btn--btn">
+          <span class="analysis-btn__icon">🔗</span>
+          <span>
+            <strong>Export Excel</strong>
+            <small>Tableau de bord .xlsx enrichi</small>
+          </span>
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── Métadonnées du classeur ─────────────────────────────────────── -->
+  <section class="card">
+    <div class="card__header">
+      <h2>2 · Classeur reconnu</h2>
+      <p>Feuilles, équipements et groupes ont été analysés avec succès.</p>
+    </div>
+
+    <div class="stats-grid">
+      <article class="stat">
+        <span class="stat__label">Fichier</span>
+        <strong class="stat__value" title="{{ filename }}">
+          {{ filename | truncate(38, True, '…') }}
+        </strong>
+      </article>
+      <article class="stat">
+        <span class="stat__label">Application</span>
+        <strong class="stat__value">{{ metadata.application or "Microsoft Excel" }}</strong>
+      </article>
+      <article class="stat">
+        <span class="stat__label">Version Excel</span>
+        <strong class="stat__value">{{ metadata.excel_version or "inconnue" }}</strong>
+      </article>
+      <article class="stat">
+        <span class="stat__label">Auteur</span>
+        <strong class="stat__value">{{ metadata.creator or "inconnu" }}</strong>
+      </article>
+      <article class="stat">
+        <span class="stat__label">Année par défaut</span>
+        <strong class="stat__value">{{ default_year }}</strong>
+      </article>
+      <article class="stat">
+        <span class="stat__label">Groupes détectés</span>
+        <strong class="stat__value">{{ groups | length }}</strong>
+      </article>
+    </div>
+
+    {% if metadata.sheets %}
+      <div class="sheets-panel">
+        <h3>Feuilles détectées</h3>
+        <div class="pill-row">
+          {% for sheet in metadata.sheets %}
+            <span class="pill">{{ sheet }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- ── Export rapide ───────────────────────────────────────────────── -->
+  <section class="card quick-export-card">
+    <div class="card__header">
+      <h2>3 · Export rapide</h2>
+      <p>
+        Cliquez sur une chaîne ou une catégorie pour lancer un export en arrière-plan.
+        Une notification apparaîtra dès que le PDF sera prêt pour l'année <strong>{{ default_year }}</strong>.
+      </p>
+    </div>
+
+    <div class="quick-export-grid">
+
+      <!-- Par chaîne -->
+      <div class="quick-section">
+        <h3 class="quick-section__title">
+          <span class="quick-section__badge quick-section__badge--chain">Chaîne</span>
+          Par chaîne
+        </h3>
+        <div class="quick-btns">
+          {% for chain in chains %}
+            <form action="{{ url_for('generate') }}" method="post"
+                  class="quick-form js-generate-form">
+              <input type="hidden" name="job_id"         value="{{ job_id }}">
+              <input type="hidden" name="year"           value="{{ default_year }}">
+              <input type="hidden" name="mode"           value="combined">
+              <input type="hidden" name="variant"        value="standard">
+              <input type="hidden" name="include_overview" value="on">
+              <input type="hidden" name="chains"         value="{{ chain }}">
+              {% for nature in natures %}
+                <input type="hidden" name="natures" value="{{ nature }}">
+              {% endfor %}
+              <button type="submit" class="button button--chain">
+                {{ chain }}
+              </button>
+            </form>
+          {% endfor %}
+
+          <!-- Toutes les chaînes -->
+          <form action="{{ url_for('generate') }}" method="post"
+                class="quick-form js-generate-form">
+            <input type="hidden" name="job_id"         value="{{ job_id }}">
+            <input type="hidden" name="year"           value="{{ default_year }}">
+            <input type="hidden" name="mode"           value="combined">
+            <input type="hidden" name="variant"        value="standard">
+            <input type="hidden" name="include_overview" value="on">
+            {% for chain in chains %}
+              <input type="hidden" name="chains" value="{{ chain }}">
+            {% endfor %}
+            {% for nature in natures %}
+              <input type="hidden" name="natures" value="{{ nature }}">
+            {% endfor %}
+            <button type="submit" class="button button--primary">
+              Toutes les chaînes
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Par catégorie (nature) -->
+      <div class="quick-section">
+        <h3 class="quick-section__title">
+          <span class="quick-section__badge quick-section__badge--nature">Catégorie</span>
+          Par catégorie
+        </h3>
+        <div class="quick-btns">
+          {% for nature in natures %}
+            <form action="{{ url_for('generate') }}" method="post"
+                  class="quick-form js-generate-form">
+              <input type="hidden" name="job_id"         value="{{ job_id }}">
+              <input type="hidden" name="year"           value="{{ default_year }}">
+              <input type="hidden" name="mode"           value="combined">
+              <input type="hidden" name="variant"        value="standard">
+              <input type="hidden" name="include_overview" value="on">
+              {% for chain in chains %}
+                <input type="hidden" name="chains" value="{{ chain }}">
+              {% endfor %}
+              <input type="hidden" name="natures" value="{{ nature }}">
+              <button type="submit" class="button button--nature">
+                {{ nature }}
+              </button>
+            </form>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="card quick-export-card">
+    <div class="card__header">
+      <h2>4 · Presets d'export enrichis</h2>
+      <p>Préparez des packs variés par chaîne, catégorie ou groupe chaîne/catégorie.</p>
+    </div>
+
+    <div class="analysis-toolbar">
+      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+        <input type="hidden" name="year" value="{{ default_year }}">
+        <input type="hidden" name="mode" value="combined">
+        <input type="hidden" name="variant" value="by_chain">
+        <input type="hidden" name="include_overview" value="on">
+        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+        <button type="submit" class="analysis-btn analysis-btn--btn">
+          <span class="analysis-btn__icon">🧭</span>
+          <span>
+            <strong>Un pack par chaîne</strong>
+            <small>Un PDF complet par chaîne sélectionnée dans un ZIP</small>
+          </span>
+        </button>
+      </form>
+
+      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+        <input type="hidden" name="year" value="{{ default_year }}">
+        <input type="hidden" name="mode" value="combined">
+        <input type="hidden" name="variant" value="by_nature">
+        <input type="hidden" name="include_overview" value="on">
+        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+        <button type="submit" class="analysis-btn analysis-btn--btn">
+          <span class="analysis-btn__icon">🧩</span>
+          <span>
+            <strong>Un pack par catégorie</strong>
+            <small>Un PDF complet par type ELEC, MECA, EXPL, SGX…</small>
+          </span>
+        </button>
+      </form>
+
+      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+        <input type="hidden" name="year" value="{{ default_year }}">
+        <input type="hidden" name="mode" value="grouped">
+        <input type="hidden" name="variant" value="by_group">
+        <input type="hidden" name="include_overview" value="on">
+        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+        <button type="submit" class="analysis-btn analysis-btn--btn">
+          <span class="analysis-btn__icon">🗂</span>
+          <span>
+            <strong>ZIP détaillé par groupe</strong>
+            <small>Un dossier par couple chaîne / catégorie</small>
+          </span>
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── Options avancées ───────────────────────────────────────────── -->
+  <section class="card layout-split">
+    <div>
+      <div class="card__header">
+        <h2>5 · Options avancées</h2>
+        <p>Personnalisez l'année, le mode d'export et le périmètre de génération.</p>
+      </div>
+
+      <form action="{{ url_for('generate') }}" method="post"
+            class="form-stack js-generate-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+
+        <div class="field-row">
+          <label class="field">
+            <span>Année</span>
+            <select name="year">
+              {% for year in years %}
+                <option value="{{ year }}"
+                  {% if year == default_year %}selected{% endif %}>{{ year }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Mode d'export</span>
+            <select name="mode">
+              <option value="combined" selected>📄 PDF unique complet</option>
+              <option value="grouped">📁 Un PDF par groupe (ZIP)</option>
+              <option value="both">📦 Les deux (ZIP)</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Découpage d'export</span>
+          <select name="variant">
+            <option value="standard" selected>Sélection unique selon les filtres</option>
+            <option value="by_chain">Un pack complet par chaîne</option>
+            <option value="by_nature">Un pack complet par catégorie</option>
+            <option value="by_group">Un pack par groupe chaîne / catégorie</option>
+          </select>
+        </label>
+
+        <div class="checkbox-panel">
+          <h3>Chaînes</h3>
+          <div class="checkbox-grid">
+            {% for chain in chains %}
+              <label class="checkbox-chip">
+                <input type="checkbox" name="chains" value="{{ chain }}" checked>
+                <span>{{ chain }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="checkbox-panel">
+          <h3>Catégories (natures)</h3>
+          <div class="checkbox-grid">
+            {% for nature in natures %}
+              <label class="checkbox-chip">
+                <input type="checkbox" name="natures" value="{{ nature }}" checked>
+                <span>{{ nature }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Limiter à certains équipements <em>(optionnel)</em></span>
+          <textarea name="equipments" rows="3"
+            placeholder="Un équipement par ligne ou séparé par virgule.&#10;Ex : DATEUSE, PALETTISEUR"></textarea>
+        </label>
+
+        <label class="toggle">
+          <input type="checkbox" name="include_overview" checked>
+          <span>Inclure la page de synthèse multi-machines en tête de chaque groupe</span>
+        </label>
+
+        <button type="submit" class="button button--primary button--lg">
+          Lancer en arrière-plan →
+        </button>
+      </form>
+    </div>
+
+    <!-- Table récap des groupes -->
+    <aside class="card card--inset">
+      <div class="card__header">
+        <h2>Groupes détectés</h2>
+        <p>Équipements disponibles pour l'année {{ default_year }}.</p>
+      </div>
+      {% set max_equip = groups | map(attribute='equipment_count') | max | default(1) %}
+      <div class="group-table">
+        <div class="group-table__head">
+          <span>Chaîne</span>
+          <span>Catégorie</span>
+          <span>Équipements</span>
+        </div>
+        {% for group in groups %}
+          {% set pct = (group.equipment_count / max_equip * 100) | int %}
+          <div class="group-table__row
+            {% if group.equipment_count == 0 %}group-table__row--empty{% endif %}">
+            <span class="chain-badge">{{ group.chain }}</span>
+            <span class="nature-badge nature-badge--{{ group.nature | lower }}">
+              {{ group.nature }}
+            </span>
+            <div class="equip-bar-cell">
+              <div class="equip-bar">
+                <div class="equip-bar__fill" style="width:{{ pct }}%"></div>
+              </div>
+              <strong class="equip-bar__count">{{ group.equipment_count }}</strong>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="recap-total">
+        <span>{{ groups | length }} groupe{{ 's' if groups | length > 1 }}</span>
+        <span>·</span>
+        <strong>{{ groups | sum(attribute='equipment_count') }}</strong> équipements au total
+      </div>
+    </aside>
+  </section>
+
+{% endblock %}

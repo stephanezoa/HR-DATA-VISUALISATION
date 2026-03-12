@@ -1,0 +1,15 @@
+{
+  "smtp_host": "mail.perenkap.com",
+  "smtp_port": 587,
+  "smtp_user": "noreply@perenkap.com",
+  "smtp_pass": "Perenkap2025-77",
+  "smtp_from": "noreply@perenkap.com",
+  "smtp_from_name": "RAPPORT PDF",
+  "smtp_use_tls": true,
+  "smtp_use_ssl": false,
+  "default_recipients": [
+    "stephanezoa2310@gmail.com"
+  ],
+  "subject_template": "Rapport Arrêts {label} — {year}",
+  "email_signature": "Ce rapport a été généré automatiquement par HR Brasserie Reports.\r\nPour toute question, contactez le service maintenance."
+}

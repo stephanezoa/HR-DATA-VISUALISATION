@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Accueil d’analyse — HR Brasserie{% endblock %}
+
+{% block content %}
+  <section class="card workspace-hero-card">
+    <div class="card__header">
+      <h2>Accueil d’analyse</h2>
+      <p>Reprends une session en cours, relance un export ou consulte l’historique sans repartir de zéro.</p>
+    </div>
+
+    {% if active_session %}
+      <div class="active-session">
+        <div class="active-session__main">
+          <span class="badge badge--ok">Session active</span>
+          <h3>{{ active_session.filename }}</h3>
+          <p>
+            Importé le {{ active_session.created_at | replace('T', ' ') }}
+            · {{ active_session.size_human }}
+          </p>
+        </div>
+        <div class="active-session__actions">
+          <a href="{{ url_for('inspect_saved_session', job_id=active_session.job_id) }}"
+             class="button button--primary js-page-transition"
+             data-loader-label="Réouverture de la session d’analyse…">Reprendre l’analyse</a>
+          <a href="{{ url_for('pareto', job_id=active_session.job_id) }}"
+             class="button button--outline js-page-transition"
+             data-loader-label="Ouverture de Pareto…">Pareto</a>
+          <a href="{{ url_for('trend', job_id=active_session.job_id) }}"
+             class="button button--outline js-page-transition"
+             data-loader-label="Ouverture de Tendance…">Tendance</a>
+          <a href="{{ url_for('calendar', job_id=active_session.job_id) }}"
+             class="button button--outline js-page-transition"
+             data-loader-label="Ouverture du Calendrier…">Calendrier</a>
+        </div>
+      </div>
+    {% else %}
+      <div class="active-session active-session--empty">
+        <div class="active-session__main">
+          <span class="badge badge--warn">Aucune session active</span>
+          <h3>Commence un nouveau travail</h3>
+          <p>Charge un classeur pour ouvrir une nouvelle session d’analyse persistante.</p>
+        </div>
+        <div class="active-session__actions">
+          <a href="{{ url_for('import_page') }}" class="button button--primary">Importer un classeur</a>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card import-cta-card">
+    <div class="card__header">
+      <h2>Nouveau fichier</h2>
+      <p>Ajoute un autre classeur seulement quand tu en as besoin, sans quitter ton espace de travail.</p>
+    </div>
+    <div class="import-cta-actions">
+      <a href="{{ url_for('import_page') }}" class="button button--primary button--lg">Importer un nouveau classeur</a>
+      <a href="{{ url_for('archive_page') }}" class="button button--ghost">Voir toute l’archive</a>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="card history-card">
+      <div class="card__header">
+        <h2>Imports conservés</h2>
+        <p>Claqueurs déjà chargés, prêts à être rouverts à tout moment.</p>
+      </div>
+      {% if recent_imports %}
+        <div class="history-list">
+          {% for item in recent_imports %}
+            <div class="history-item">
+              <div class="history-item__main">
+                <strong class="history-item__title">{{ item.filename }}</strong>
+                <div class="history-item__meta">
+                  <span class="pill">{{ item.size_human }}</span>
+                  <span class="pill pill--muted">{{ item.created_at | replace('T', ' ') }}</span>
+                </div>
+              </div>
+              <div class="history-item__actions">
+                <a href="{{ url_for('inspect_saved_session', job_id=item.job_id) }}"
+                   class="button button--sm button--outline js-page-transition"
+                   data-loader-label="Réouverture de la session d’analyse…">Ouvrir</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="history-empty">Aucun import conservé pour l’instant.</p>
+      {% endif %}
+    </article>
+
+    <article class="card history-card">
+      <div class="card__header">
+        <h2>Créations récentes</h2>
+        <p>Rapports générés et archivés, disponibles de nouveau depuis l’accueil.</p>
+      </div>
+      {% if recent_entries %}
+        <div class="history-list">
+          {% for entry in recent_entries %}
+            <div class="history-item">
+              <div class="history-item__main">
+                <strong class="history-item__title">{{ entry.filename }}</strong>
+                <div class="history-item__meta">
+                  <span class="mode-badge mode-badge--{{ entry.mode }}">{{ entry.artifact_label }}</span>
+                  <span class="type-chip">{{ entry.mode_label }}</span>
+                  <span class="pill pill--muted">{{ entry.created_at | replace('T', ' ') }}</span>
+                </div>
+              </div>
+              <div class="history-item__actions">
+                <a href="{{ url_for('download_archive', archive_id=entry.id) }}"
+                   class="button button--sm button--chain">Télécharger</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="history-empty">Aucune création archivée pour l’instant.</p>
+      {% endif %}
+    </article>
+
+    <article class="card history-card">
+      <div class="card__header">
+        <h2>Téléchargements récents</h2>
+        <p>Historique des derniers fichiers réellement téléchargés depuis l’application.</p>
+      </div>
+      {% if recent_downloads %}
+        <div class="history-list">
+          {% for item in recent_downloads %}
+            <div class="history-item">
+              <div class="history-item__main">
+                <strong class="history-item__title">{{ item.filename or "Fichier archivé" }}</strong>
+                <div class="history-item__meta">
+                  <span class="mode-badge mode-badge--{{ item.mode }}">{{ item.artifact_label }}</span>
+                  <span class="type-chip">{{ item.mode_label }}</span>
+                  <span class="pill pill--muted">{{ item.downloaded_at | replace('T', ' ') }}</span>
+                </div>
+              </div>
+              <div class="history-item__actions">
+                {% if item.exists %}
+                  <a href="{{ url_for('download_archive', archive_id=item.report_id) }}"
+                     class="button button--sm button--outline">Re-télécharger</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="history-empty">Aucun téléchargement enregistré pour l’instant.</p>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}

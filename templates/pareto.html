@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Analyse Pareto {{ year }} — HR Brasserie{% endblock %}
+
+{% block content %}
+
+<section class="card reveal">
+  <div class="analysis-header">
+    <div>
+      <h2 class="analysis-title">📊 Analyse Pareto — {{ year }}</h2>
+      <p class="analysis-sub">
+        Vue filtrable des équipements qui concentrent la majorité des arrêts.
+        <strong>{{ pareto_cut }}</strong> équipement{{ 's' if pareto_cut != 1 }} couvrent
+        <strong>{{ "%.1f"|format(pareto_share) }} %</strong> du poids total analysé.
+      </p>
+    </div>
+    <div class="analysis-actions">
+      <a href="{{ url_for('inspect_saved_session', job_id=job_id) }}"
+         class="button button--ghost js-page-transition"
+         data-loader-label="Retour à l’analyse…">← Retour</a>
+    </div>
+  </div>
+
+  <form method="get" class="analysis-filters js-page-loader-form"
+        data-loader-label="Actualisation de Pareto…">
+    <label class="field">
+      <span>Année</span>
+      <select name="year">
+        {% for item in years %}
+          <option value="{{ item }}" {% if item == year %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Chaîne</span>
+      <select name="chain">
+        <option value="">Toutes</option>
+        {% for item in chain_options %}
+          <option value="{{ item }}" {% if item == selected_chain %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Catégorie</span>
+      <select name="nature">
+        <option value="">Toutes</option>
+        {% for item in nature_options %}
+          <option value="{{ item }}" {% if item == selected_nature %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="analysis-filters__actions">
+      <button type="submit" class="button button--primary">Appliquer</button>
+    </div>
+  </form>
+
+  <div class="pareto-stats reveal reveal--delay-1">
+    <div class="pstat">
+      <span class="pstat__value">{{ total_equipment }}</span>
+      <span class="pstat__label">Équipements</span>
+    </div>
+    <div class="pstat pstat--highlight">
+      <span class="pstat__value">{{ pareto_cut }}</span>
+      <span class="pstat__label">Bloc Pareto</span>
+    </div>
+    <div class="pstat">
+      <span class="pstat__value">{{ "%.1f"|format(peak_value) }} %</span>
+      <span class="pstat__label">Pic</span>
+    </div>
+    <div class="pstat">
+      <span class="pstat__value">{{ "%.1f"|format(median_value) }} %</span>
+      <span class="pstat__label">Médiane</span>
+    </div>
+  </div>
+
+  <div class="analysis-callout reveal reveal--delay-2">
+    <strong>Équipement le plus contributeur:</strong> {{ peak_equipment }}
+    {% if selected_chain or selected_nature %}
+      <span class="analysis-callout__filters">
+        {% if selected_chain %}<span class="pill pill--chain">{{ selected_chain }}</span>{% endif %}
+        {% if selected_nature %}<span class="pill pill--nature nature-badge nature-badge--{{ selected_nature | lower }}">{{ selected_nature }}</span>{% endif %}
+      </span>
+    {% endif %}
+  </div>
+
+  <div class="chart-container chart-container--tall chart-shell chart-shell--loading" id="paretoChartShell">
+    <canvas id="paretoChart"></canvas>
+  </div>
+</section>
+
+<section class="card reveal reveal--delay-3">
+  <div class="card__header">
+    <h2>Détail par équipement</h2>
+    <p>Le rang Pareto combine le poids individuel et le cumul dans la sélection active.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Chaîne</th>
+          <th>Catégorie</th>
+          <th>Équipement</th>
+          <th class="text-right">Taux moyen (%)</th>
+          <th class="text-right">Part (%)</th>
+          <th class="text-right">Cumulatif (%)</th>
+          <th>Lecture</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{{ 'row-pareto' if row.rank <= pareto_cut else 'row-normal' }}">
+          <td class="col-rank">{{ row.rank }}</td>
+          <td><span class="pill pill--chain">{{ row.chain }}</span></td>
+          <td><span class="pill pill--nature nature-badge nature-badge--{{ row.nature | lower }}">{{ row.nature }}</span></td>
+          <td>{{ row.equipment }}</td>
+          <td class="text-right">{{ "%.2f"|format(row.value_pct) }}</td>
+          <td class="text-right">{{ "%.1f"|format(row.share_pct) }}</td>
+          <td class="text-right">{{ "%.1f"|format(row.cumul_pct) }}</td>
+          <td>
+            {% if row.rank <= pareto_cut %}
+              <span class="badge badge--danger">Prioritaire</span>
+            {% else %}
+              <span class="badge badge--ok">Secondaire</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+<script>
+(function () {
+  var labels = {{ labels | tojson }};
+  var values = {{ values | tojson }};
+  var cumul  = {{ cumul  | tojson }};
+  var cut    = {{ pareto_cut | int }};
+
+  var barColors = labels.map(function (_, index) {
+    return index < cut ? '#C15B2A' : '#CBD5E1';
+  });
+
+  var shell = document.getElementById('paretoChartShell');
+  var ctx = document.getElementById('paretoChart').getContext('2d');
+  new Chart(ctx, {
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Taux moyen (%)',
+          data: values,
+          backgroundColor: barColors,
+          borderRadius: 6,
+          maxBarThickness: 34,
+          yAxisID: 'yBar',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Cumulatif (%)',
+          data: cumul,
+          borderColor: '#0F4C81',
+          backgroundColor: 'rgba(15,76,129,0.10)',
+          borderWidth: 2.5,
+          pointRadius: 3,
+          fill: true,
+          tension: 0.28,
+          yAxisID: 'yCumul',
+          order: 1,
+        },
+        {
+          type: 'line',
+          label: 'Seuil 80 %',
+          data: Array(labels.length).fill(80),
+          borderColor: '#F59E0B',
+          borderDash: [7, 5],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          yAxisID: 'yCumul',
+          order: 0,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) {
+              if (ctx.parsed.y === null) return null;
+              return ctx.dataset.label + ' : ' + ctx.parsed.y.toFixed(2) + ' %';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 60,
+            minRotation: 35,
+            font: { size: 10 },
+            callback: function (_value, index) {
+              var label = this.getLabelForValue(index);
+              return label.length > 22 ? label.slice(0, 21) + '…' : label;
+            }
+          },
+          grid: { display: false }
+        },
+        yBar: {
+          position: 'left',
+          title: { display: true, text: 'Taux moyen (%)' },
+          grid: { color: '#E8ECF2' }
+        },
+        yCumul: {
+          position: 'right',
+          min: 0,
+          max: 100,
+          title: { display: true, text: 'Cumul (%)' },
+          grid: { drawOnChartArea: false }
+        }
+      }
+    }
+  });
+  if (shell) shell.classList.remove('chart-shell--loading');
+}());
+</script>
+{% endblock %}

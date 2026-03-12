@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HR Brasserie — Rapports Arrêts{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body data-default-recipients="{{ ui_default_recipients | join(', ') | e }}">
+
+<!-- ── Navigation principale ─────────────────────────────────────────────── -->
+<nav class="topnav" role="navigation" aria-label="Navigation principale">
+  {% set analysis_endpoints = ['inspect_saved_session', 'pareto', 'trend', 'calendar'] %}
+  <div class="topnav__inner">
+    <a class="topnav__brand" href="{{ url_for('index') }}">
+      <span class="topnav__brand-icon">⚙</span>
+      <span>HR Brasserie</span>
+    </a>
+
+    <div class="topnav__links" id="navLinks">
+      {% if request.endpoint in analysis_endpoints %}
+        <span class="topnav__link topnav__link--current">Analyse</span>
+      {% endif %}
+      <a href="{{ url_for('index') }}"         class="topnav__link">Accueil</a>
+      <a href="{{ url_for('import_page') }}"   class="topnav__link">Importer</a>
+      <a href="{{ url_for('archive_page') }}"  class="topnav__link">Archive</a>
+      <a href="{{ url_for('settings_page') }}" class="topnav__link">Paramètres</a>
+    </div>
+
+    <button class="topnav__hamburger" id="navToggle" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ── Drawer mobile ──────────────────────────────────────────────────────── -->
+<div class="nav-drawer" id="navDrawer" hidden>
+  {% if request.endpoint in analysis_endpoints %}
+    <span class="nav-drawer__link nav-drawer__link--current">Analyse</span>
+  {% endif %}
+  <a href="{{ url_for('index') }}"         class="nav-drawer__link">Accueil</a>
+  <a href="{{ url_for('import_page') }}"   class="nav-drawer__link">Importer</a>
+  <a href="{{ url_for('archive_page') }}"  class="nav-drawer__link">Archive</a>
+  <a href="{{ url_for('settings_page') }}" class="nav-drawer__link">Paramètres</a>
+</div>
+
+<div class="job-hub" id="jobHub">
+  <button class="job-hub__toggle" id="jobHubToggle" type="button" aria-expanded="false">
+    Tâches en arrière-plan
+    <span class="job-hub__badge" id="jobHubBadge">0</span>
+  </button>
+  <div class="job-hub__panel" id="jobHubPanel" hidden>
+    <div class="job-hub__header">
+      <div>
+        <strong>File de génération</strong>
+        <p>Les rapports continuent en arrière-plan.</p>
+      </div>
+      <button class="job-hub__clear" id="jobHubClear" type="button">Nettoyer</button>
+    </div>
+    <div class="job-hub__list" id="jobHubList">
+      <div class="job-hub__empty" id="jobHubEmpty">Aucune génération en cours.</div>
+    </div>
+  </div>
+</div>
+
+<div class="notify-stack" id="notifyStack" aria-live="polite" aria-atomic="true"></div>
+
+<div class="gen-overlay" id="genOverlay" aria-live="assertive" aria-atomic="true" hidden>
+  <div class="gen-modal gen-modal--notify">
+    <div class="gen-panel gen-panel--success" id="genSuccess" hidden>
+      <div class="gen-success-icon">✓</div>
+      <h2 class="gen-title">Rapport prêt</h2>
+      <p class="gen-step" id="genSuccessMsg">La génération en arrière-plan est terminée.</p>
+      <a class="button button--primary" id="genDownloadBtn" href="#" download>↓ Télécharger</a>
+      <div class="email-form">
+        <label class="email-form__label">Envoyer par email</label>
+        <div class="email-presets" id="emailPresetList">
+          {% for email in ui_default_recipients %}
+            <button class="email-preset" type="button" data-email="{{ email }}">{{ email }}</button>
+          {% endfor %}
+        </div>
+        <div class="email-form__row">
+          <input type="email" id="emailTo" multiple
+                 placeholder="Choisir un email proposé ou saisir manuellement"
+                 class="email-form__input">
+          <button class="button button--outline" id="emailSendBtn" type="button">Envoyer</button>
+        </div>
+        <p class="email-form__hint">Tu peux sélectionner une personne proposée ou saisir une adresse librement.</p>
+        <p class="email-form__feedback" id="emailFeedback" aria-live="polite"></p>
+      </div>
+      <button class="button button--ghost" id="genCloseBtn" type="button">Fermer</button>
+    </div>
+
+    <div class="gen-panel gen-panel--error" id="genError" hidden>
+      <div class="gen-error-icon">✕</div>
+      <h2 class="gen-title">Erreur de génération</h2>
+      <p class="gen-step gen-error-msg" id="genErrorMsg"></p>
+      <button class="button button--ghost" id="genErrorCloseBtn" type="button">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-loader" id="pageLoader" hidden>
+  <div class="page-loader__panel">
+    <div class="page-loader__spinner"></div>
+    <strong>Ouverture de l’analyse…</strong>
+    <p>Chargement de la page en cours.</p>
+    <div class="page-loader__track" aria-hidden="true">
+      <div class="page-loader__bar"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Contenu ────────────────────────────────────────────────────────────── -->
+<div class="page-shell">
+
+  <header class="hero">
+    <div class="hero__eyebrow">HR Brasserie · Maintenance</div>
+    <h1 class="hero__title">Rapports d'Arrêts Production</h1>
+    <p class="hero__subtitle">
+      Reprenez une analyse existante, suivez vos exports en arrière-plan
+      et importez un nouveau classeur seulement quand c’est nécessaire.
+    </p>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <section class="flash-stack" role="alert">
+        {% for category, message in messages %}
+          <div class="flash flash--{{ category }}">
+            <span class="flash__icon">{% if category == 'error' %}✕{% else %}✓{% endif %}</span>
+            {{ message }}
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+  {% endwith %}
+
+  <main class="content">{% block content %}{% endblock %}</main>
+
+  <footer class="site-footer">
+    HR Brasserie · Export Arrêts MES · Génération automatique de rapports PDF
+  </footer>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  var navToggle = document.getElementById('navToggle');
+  var navDrawer = document.getElementById('navDrawer');
+  var overlay = document.getElementById('genOverlay');
+  var pageLoader = document.getElementById('pageLoader');
+  var panelSuccess = document.getElementById('genSuccess');
+  var panelError = document.getElementById('genError');
+  var successMsg = document.getElementById('genSuccessMsg');
+  var downloadBtn = document.getElementById('genDownloadBtn');
+  var closeBtn = document.getElementById('genCloseBtn');
+  var errCloseBtn = document.getElementById('genErrorCloseBtn');
+  var errMsgEl = document.getElementById('genErrorMsg');
+  var emailInput = document.getElementById('emailTo');
+  var emailSendBtn = document.getElementById('emailSendBtn');
+  var emailFeedback = document.getElementById('emailFeedback');
+  var emailPresetList = document.getElementById('emailPresetList');
+  var jobHub = document.getElementById('jobHub');
+  var jobHubToggle = document.getElementById('jobHubToggle');
+  var jobHubPanel = document.getElementById('jobHubPanel');
+  var jobHubList = document.getElementById('jobHubList');
+  var jobHubEmpty = document.getElementById('jobHubEmpty');
+  var jobHubBadge = document.getElementById('jobHubBadge');
+  var jobHubClear = document.getElementById('jobHubClear');
+  var notifyStack = document.getElementById('notifyStack');
+
+  var defaultRecipientList = (document.body.dataset.defaultRecipients || '')
+    .split(/\s*,\s*/)
+    .map(function (value) { return value.trim(); })
+    .filter(Boolean);
+  var jobs = new Map();
+  var pollTimer = null;
+
+  function requestBrowserNotifications() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(function () {});
+    }
+  }
+
+  if (navToggle && navDrawer) {
+    navToggle.addEventListener('click', function () {
+      var open = navToggle.getAttribute('aria-expanded') === 'true';
+      navToggle.setAttribute('aria-expanded', String(!open));
+      navToggle.classList.toggle('is-open', !open);
+      navDrawer.hidden = open;
+    });
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > 900) {
+        navToggle.setAttribute('aria-expanded', 'false');
+        navToggle.classList.remove('is-open');
+        navDrawer.hidden = true;
+      }
+    });
+    document.addEventListener('click', function (e) {
+      if (!navToggle.contains(e.target) && !navDrawer.contains(e.target)) {
+        navToggle.setAttribute('aria-expanded', 'false');
+        navToggle.classList.remove('is-open');
+        navDrawer.hidden = true;
+      }
+    });
+  }
+
+  function parseRecipients(value) {
+    return (value || '')
+      .split(/[,\n;]+/)
+      .map(function (item) { return item.trim(); })
+      .filter(Boolean)
+      .filter(function (item, index, arr) { return arr.indexOf(item) === index; });
+  }
+
+  function formatRecipients(list) {
+    return list.join(', ');
+  }
+
+  function syncPresetButtons() {
+    if (!emailPresetList) return;
+    var active = parseRecipients(emailInput.value);
+    emailPresetList.querySelectorAll('.email-preset').forEach(function (btn) {
+      btn.classList.toggle('is-active', active.indexOf(btn.dataset.email) >= 0);
+    });
+  }
+
+  function togglePresetEmail(email) {
+    if (!email) return;
+    var recipients = parseRecipients(emailInput.value);
+    var index = recipients.indexOf(email);
+    if (index >= 0) {
+      recipients.splice(index, 1);
+    } else {
+      recipients.push(email);
+    }
+    emailInput.value = formatRecipients(recipients);
+    syncPresetButtons();
+  }
+
+  function showOverlay(panelName) {
+    overlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    panelSuccess.hidden = panelName !== 'success';
+    panelError.hidden = panelName !== 'error';
+  }
+
+  function hideOverlay() {
+    overlay.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  function showPageLoader(label) {
+    if (!pageLoader) return;
+    var titleEl = pageLoader.querySelector('strong');
+    if (titleEl && label) {
+      titleEl.textContent = label;
+    }
+    pageLoader.hidden = false;
+  }
+
+  function pushToast(kind, title, body, onClick) {
+    if (!notifyStack) return;
+    var toast = document.createElement('button');
+    toast.type = 'button';
+    toast.className = 'notify-toast notify-toast--' + kind;
+    toast.innerHTML =
+      '<strong class="notify-toast__title"></strong>' +
+      '<span class="notify-toast__body"></span>';
+    toast.querySelector('.notify-toast__title').textContent = title;
+    toast.querySelector('.notify-toast__body').textContent = body;
+    if (typeof onClick === 'function') {
+      toast.addEventListener('click', function () {
+        onClick();
+        toast.remove();
+      });
+    }
+    notifyStack.appendChild(toast);
+    setTimeout(function () {
+      toast.classList.add('is-visible');
+    }, 20);
+    setTimeout(function () {
+      toast.classList.remove('is-visible');
+      setTimeout(function () { toast.remove(); }, 240);
+    }, 5000);
+  }
+
+  function pushBrowserNotification(title, body, url) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    var note = new Notification(title, { body: body });
+    note.onclick = function () {
+      window.focus();
+      if (url) window.location.href = url;
+      note.close();
+    };
+  }
+
+  function setHubOpen(open) {
+    if (!jobHubPanel || !jobHubToggle) return;
+    jobHubPanel.hidden = !open;
+    jobHub.classList.toggle('is-open', open);
+    jobHubToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function updateHubState() {
+    if (!jobHubList || !jobHubEmpty || !jobHubBadge) return;
+    var allJobs = Array.from(jobs.values());
+    var activeCount = allJobs.filter(function (job) {
+      return job.status === 'pending' || job.status === 'running';
+    }).length;
+    jobHubBadge.textContent = String(activeCount);
+    jobHubEmpty.hidden = allJobs.length > 0;
+    if (allJobs.length === 0) {
+      setHubOpen(false);
+    }
+  }
+
+  function createJobCard(job) {
+    var card = document.createElement('article');
+    card.className = 'job-card';
+    card.dataset.jobId = job.id;
+    card.innerHTML =
+      '<div class="job-card__top">' +
+        '<div>' +
+          '<strong class="job-card__title"></strong>' +
+          '<p class="job-card__subtitle"></p>' +
+        '</div>' +
+        '<span class="job-card__status job-card__status--pending">En attente</span>' +
+      '</div>' +
+      '<div class="job-card__track"><div class="job-card__bar"></div></div>' +
+      '<div class="job-card__meta">' +
+        '<span class="job-card__percent">0 %</span>' +
+        '<span class="job-card__step">En file d\'attente…</span>' +
+      '</div>' +
+      '<div class="job-card__actions">' +
+        '<a class="button button--sm button--chain job-card__download" href="#" hidden>Télécharger</a>' +
+        '<button class="button button--sm button--ghost job-card__remove" type="button" hidden>Retirer</button>' +
+      '</div>';
+    card.querySelector('.job-card__title').textContent = job.title;
+    card.querySelector('.job-card__subtitle').textContent = job.subtitle;
+    jobHubList.prepend(card);
+    job.card = card;
+    updateHubState();
+    return card;
+  }
+
+  function restoreJobCard(job) {
+    if (job.card) {
+      updateJobCard(job);
+      return;
+    }
+    createJobCard(job);
+    updateJobCard(job);
+  }
+
+  function updateJobCard(job) {
+    if (!job.card) return;
+    var statusEl = job.card.querySelector('.job-card__status');
+    var barEl = job.card.querySelector('.job-card__bar');
+    var percentEl = job.card.querySelector('.job-card__percent');
+    var stepEl = job.card.querySelector('.job-card__step');
+    var downloadEl = job.card.querySelector('.job-card__download');
+    var removeEl = job.card.querySelector('.job-card__remove');
+    var statusMap = {
+      pending: ['En attente', 'pending'],
+      running: ['En cours', 'running'],
+      done: ['Terminé', 'done'],
+      error: ['Erreur', 'error']
+    };
+    var statusInfo = statusMap[job.status] || ['Inconnu', 'pending'];
+
+    statusEl.textContent = statusInfo[0];
+    statusEl.className = 'job-card__status job-card__status--' + statusInfo[1];
+    percentEl.textContent = Math.max(0, Math.min(job.percent || 0, 100)) + ' %';
+    stepEl.textContent = job.step || '';
+    barEl.style.width = Math.max(0, Math.min(job.percent || 0, 100)) + '%';
+    job.card.classList.toggle('is-done', job.status === 'done');
+    job.card.classList.toggle('is-error', job.status === 'error');
+
+    if (job.status === 'done') {
+      downloadEl.hidden = false;
+      downloadEl.href = '/download/' + job.id;
+      downloadEl.download = job.downloadName || 'rapport.pdf';
+      removeEl.hidden = false;
+    } else if (job.status === 'error') {
+      removeEl.hidden = false;
+    }
+  }
+
+  function maybeStopPolling() {
+    var hasActive = Array.from(jobs.values()).some(function (job) {
+      return job.status === 'pending' || job.status === 'running';
+    });
+    if (!hasActive && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function showSuccess(job) {
+    emailSendBtn._jobId = job.id;
+    downloadBtn.href = '/download/' + job.id;
+    downloadBtn.download = job.downloadName || 'rapport.pdf';
+    successMsg.textContent = job.downloadName
+      ? 'Le rapport « ' + job.downloadName + ' » est prêt.'
+      : 'La génération en arrière-plan est terminée.';
+    emailInput.value = '';
+    emailFeedback.textContent = '';
+    emailFeedback.className = 'email-form__feedback';
+    syncPresetButtons();
+    showOverlay('success');
+  }
+
+  function showError(message) {
+    errMsgEl.textContent = message;
+    showOverlay('error');
+  }
+
+  function readJsonResponse(response) {
+    return response.text().then(function (text) {
+      var contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        var match = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+        throw new Error(
+          'Le serveur a retourné une réponse inattendue' +
+          (match ? ' : ' + match[1].trim() : ' (statut ' + response.status + ')')
+        );
+      }
+      try {
+        return JSON.parse(text);
+      } catch (_err) {
+        throw new Error('Réponse JSON invalide du serveur.');
+      }
+    });
+  }
+
+  function pollJob(job) {
+    if (job.requesting) return;
+    job.requesting = true;
+    fetch('/api/status/' + job.id)
+      .then(readJsonResponse)
+      .then(function (data) {
+        if (data.error) throw new Error(data.error);
+        job.status = data.status || job.status;
+        job.percent = data.percent || 0;
+        job.step = data.step || '';
+        job.title = data.title || job.title;
+        job.subtitle = data.subtitle || job.subtitle;
+        job.downloadName = data.download_name || job.downloadName;
+        if (job.card) {
+          job.card.querySelector('.job-card__title').textContent = job.title;
+          job.card.querySelector('.job-card__subtitle').textContent = job.subtitle;
+        }
+        updateJobCard(job);
+
+        if (!job.notified && job.status === 'done') {
+          job.notified = true;
+          pushToast('success', 'Rapport prêt', job.title, function () {
+            showSuccess(job);
+          });
+          pushBrowserNotification('Rapport prêt', job.title, '/download/' + job.id);
+          showSuccess(job);
+        } else if (!job.notified && job.status === 'error') {
+          job.notified = true;
+          pushToast('error', 'Erreur de génération', job.step || data.error || 'Une erreur est survenue.', function () {
+            showError(data.error || job.step || 'Erreur inconnue.');
+          });
+          showError(data.error || job.step || 'Erreur inconnue.');
+        }
+        maybeStopPolling();
+      })
+      .catch(function (err) {
+        job.status = 'error';
+        job.step = err.message || 'Erreur réseau.';
+        updateJobCard(job);
+        if (!job.notified) {
+          job.notified = true;
+          showError(job.step);
+        }
+        maybeStopPolling();
+      })
+      .finally(function () {
+        job.requesting = false;
+      });
+  }
+
+  function ensurePolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function () {
+      jobs.forEach(function (job) {
+        if (job.status === 'pending' || job.status === 'running') {
+          pollJob(job);
+        }
+      });
+      maybeStopPolling();
+    }, 1000);
+  }
+
+  function summarizeValues(values, fallback) {
+    if (!values.length) return fallback;
+    if (values.length <= 2) return values.join(' + ');
+    return values.slice(0, 2).join(' + ') + ' +' + (values.length - 2);
+  }
+
+  function buildJobTitle(form, submitter) {
+    if (submitter && submitter.textContent.trim()) {
+      return submitter.textContent.replace(/\s+/g, ' ').trim();
+    }
+    var fd = new FormData(form);
+    var chains = fd.getAll('chains');
+    var natures = fd.getAll('natures');
+    return summarizeValues(chains, 'Toutes les chaînes') + ' · ' +
+      summarizeValues(natures, 'Toutes les catégories');
+  }
+
+  function buildJobSubtitle(form) {
+    var fd = new FormData(form);
+    var year = fd.get('year') || 'année auto';
+    var modeMap = {
+      combined: 'document complet',
+      grouped: 'un PDF par groupe',
+      both: 'pack mixte'
+    };
+    var variantMap = {
+      standard: 'sélection directe',
+      by_chain: 'découpage par chaîne',
+      by_nature: 'découpage par catégorie',
+      by_group: 'découpage par groupe'
+    };
+    return 'Année ' + year + ' · ' +
+      (modeMap[fd.get('mode')] || 'export') + ' · ' +
+      (variantMap[fd.get('variant')] || 'standard');
+  }
+
+  function setSubmitterState(submitter, pending) {
+    if (!submitter) return;
+    if (!submitter.dataset.labelOriginal) {
+      submitter.dataset.labelOriginal = submitter.innerHTML;
+    }
+    submitter.disabled = pending;
+    submitter.classList.toggle('is-pending', pending);
+    submitter.innerHTML = pending ? 'Ajout à la file…' : submitter.dataset.labelOriginal;
+  }
+
+  function registerJob(jobData, options) {
+    options = options || {};
+    var job = jobs.get(jobData.id);
+    if (!job) {
+      job = {
+        id: jobData.id,
+        title: jobData.title || '',
+        subtitle: jobData.subtitle || '',
+        status: jobData.status || 'pending',
+        percent: typeof jobData.percent === 'number' ? jobData.percent : 0,
+        step: jobData.step || 'En file d\'attente…',
+        notified: Boolean(jobData.notified),
+        downloadName: jobData.downloadName || jobData.download_name || ''
+      };
+      jobs.set(job.id, job);
+    } else {
+      job.title = jobData.title || job.title;
+      job.subtitle = jobData.subtitle || job.subtitle;
+      job.status = jobData.status || job.status;
+      job.percent = typeof jobData.percent === 'number' ? jobData.percent : job.percent;
+      job.step = jobData.step || job.step;
+      job.downloadName = jobData.downloadName || jobData.download_name || job.downloadName;
+    }
+    restoreJobCard(job);
+    if (options.openHub !== false) {
+      setHubOpen(true);
+    }
+    updateHubState();
+    if (job.status === 'pending' || job.status === 'running') {
+      ensurePolling();
+      pollJob(job);
+    }
+    return job;
+  }
+
+  function restoreActiveJobs() {
+    fetch('/api/jobs?status=active')
+      .then(readJsonResponse)
+      .then(function (data) {
+        (data.jobs || []).forEach(function (jobData) {
+          registerJob(jobData, { openHub: false });
+        });
+        if ((data.jobs || []).length) {
+          setHubOpen(true);
+          updateHubState();
+        }
+      })
+      .catch(function () {});
+  }
+
+  function interceptForm(form) {
+    if (form.dataset.bgBound === 'true') return;
+    form.dataset.bgBound = 'true';
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var submitter = e.submitter || form.querySelector('[type="submit"]');
+      var jobTitle = buildJobTitle(form, submitter);
+      var jobSubtitle = buildJobSubtitle(form);
+      setSubmitterState(submitter, true);
+      requestBrowserNotifications();
+      fetch(form.action, { method: 'POST', body: new FormData(form), keepalive: true })
+        .then(readJsonResponse)
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          registerJob({
+            id: data.job_id,
+            title: data.title || jobTitle,
+            subtitle: data.subtitle || jobSubtitle,
+            status: 'pending',
+            percent: 0,
+            step: 'En file d\'attente…'
+          });
+          pushToast('info', 'Génération lancée', data.title || jobTitle);
+        })
+        .catch(function (err) {
+          showError(err.message || 'Erreur réseau.');
+        })
+        .finally(function () {
+          setSubmitterState(submitter, false);
+        });
+    });
+  }
+
+  function bindPageTransitions(root) {
+    if (root && root.matches && root.matches('.js-page-transition')) {
+      root.dataset.transitionBound = 'true';
+      root.addEventListener('click', function (e) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (root.target && root.target !== '_self') return;
+        showPageLoader(root.dataset.loaderLabel || 'Ouverture de l’analyse…');
+      });
+    }
+    (root || document).querySelectorAll('.js-page-transition').forEach(function (link) {
+      if (link.dataset.transitionBound === 'true') return;
+      link.dataset.transitionBound = 'true';
+      link.addEventListener('click', function (e) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (link.target && link.target !== '_self') return;
+        showPageLoader(link.dataset.loaderLabel || 'Ouverture de l’analyse…');
+      });
+    });
+  }
+
+  function bindPageLoaderForms(root) {
+    var forms = [];
+    if (root && root.matches && root.matches('.js-page-loader-form')) {
+      forms.push(root);
+    }
+    if (root && root.querySelectorAll) {
+      root.querySelectorAll('.js-page-loader-form').forEach(function (form) {
+        forms.push(form);
+      });
+    } else if (!root) {
+      document.querySelectorAll('.js-page-loader-form').forEach(function (form) {
+        forms.push(form);
+      });
+    }
+    forms.forEach(function (form) {
+      if (form.dataset.loaderBound === 'true') return;
+      form.dataset.loaderBound = 'true';
+      form.addEventListener('submit', function () {
+        var submitter = document.activeElement;
+        if (submitter && submitter.tagName === 'BUTTON') {
+          if (!submitter.dataset.labelOriginal) {
+            submitter.dataset.labelOriginal = submitter.innerHTML;
+          }
+          submitter.disabled = true;
+          submitter.classList.add('button--loading');
+        }
+        showPageLoader(form.dataset.loaderLabel || 'Chargement en cours…');
+      });
+    });
+  }
+
+  if (jobHubToggle) {
+    jobHubToggle.addEventListener('click', function () {
+      setHubOpen(jobHubPanel.hidden);
+    });
+  }
+  if (jobHubClear) {
+    jobHubClear.addEventListener('click', function () {
+      Array.from(jobs.values()).forEach(function (job) {
+        if (job.status === 'done' || job.status === 'error') {
+          if (job.card) job.card.remove();
+          jobs.delete(job.id);
+        }
+      });
+      updateHubState();
+      maybeStopPolling();
+    });
+  }
+  if (jobHubList) {
+    jobHubList.addEventListener('click', function (e) {
+      var removeBtn = e.target.closest('.job-card__remove');
+      if (!removeBtn) return;
+      var card = removeBtn.closest('.job-card');
+      if (!card) return;
+      jobs.delete(card.dataset.jobId);
+      card.remove();
+      updateHubState();
+      maybeStopPolling();
+    });
+  }
+
+  if (closeBtn) closeBtn.addEventListener('click', hideOverlay);
+  if (errCloseBtn) errCloseBtn.addEventListener('click', hideOverlay);
+  if (overlay) {
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) hideOverlay();
+    });
+  }
+
+  if (emailPresetList) {
+    emailPresetList.addEventListener('click', function (e) {
+      var btn = e.target.closest('.email-preset');
+      if (!btn) return;
+      togglePresetEmail(btn.dataset.email || '');
+    });
+  }
+  if (emailInput) {
+    emailInput.addEventListener('input', syncPresetButtons);
+  }
+  if (emailSendBtn) {
+    emailSendBtn.addEventListener('click', function () {
+      var jobId = emailSendBtn._jobId;
+      var to = formatRecipients(parseRecipients(emailInput.value));
+      if (!jobId) {
+        emailFeedback.textContent = 'Aucun rapport prêt à envoyer.';
+        emailFeedback.className = 'email-form__feedback email-form__feedback--error';
+        return;
+      }
+      if (!to) {
+        emailFeedback.textContent = 'Choisis une adresse proposée ou saisis-en une manuellement.';
+        emailFeedback.className = 'email-form__feedback email-form__feedback--error';
+        return;
+      }
+      emailSendBtn.disabled = true;
+      emailSendBtn.textContent = 'Envoi…';
+      emailFeedback.textContent = '';
+      var fd = new FormData();
+      fd.append('to', to);
+      fetch('/api/send-email/' + jobId, { method: 'POST', body: fd })
+        .then(readJsonResponse)
+        .then(function (data) {
+          emailSendBtn.disabled = false;
+          emailSendBtn.textContent = 'Envoyer';
+          if (data.ok) {
+            emailFeedback.textContent = '✓ ' + data.message;
+            emailFeedback.className = 'email-form__feedback email-form__feedback--ok';
+            emailInput.value = '';
+            syncPresetButtons();
+          } else {
+            emailFeedback.textContent = '✕ ' + (data.error || 'Erreur inconnue.');
+            emailFeedback.className = 'email-form__feedback email-form__feedback--error';
+          }
+        })
+        .catch(function (err) {
+          emailSendBtn.disabled = false;
+          emailSendBtn.textContent = 'Envoyer';
+          emailFeedback.textContent = '✕ ' + (err.message || 'Erreur réseau.');
+          emailFeedback.className = 'email-form__feedback email-form__feedback--error';
+        });
+    });
+  }
+
+  document.querySelectorAll('.js-generate-form').forEach(interceptForm);
+  bindPageTransitions(document);
+  bindPageLoaderForms(document);
+  restoreActiveJobs();
+  new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      mutation.addedNodes.forEach(function (node) {
+        if (node.nodeType !== 1) return;
+        if (node.classList && node.classList.contains('js-generate-form')) interceptForm(node);
+        if (node.querySelectorAll) {
+          node.querySelectorAll('.js-generate-form').forEach(interceptForm);
+          bindPageTransitions(node);
+          bindPageLoaderForms(node);
+        }
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+
+}());
+</script>
+</body>
+</html>

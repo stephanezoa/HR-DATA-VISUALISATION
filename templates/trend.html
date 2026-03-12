@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Rapport de tendance — HR Brasserie{% endblock %}
+
+{% block content %}
+
+<section class="card reveal">
+  <div class="analysis-header">
+    <div>
+      <h2 class="analysis-title">📈 Rapport de tendance</h2>
+      <p class="analysis-sub">
+        Double lecture: évolution des chaînes et évolution des catégories.
+        {% if next_year %}Une projection simple est calculée pour {{ next_year }}.{% endif %}
+      </p>
+    </div>
+    <div class="analysis-actions">
+      <a href="{{ url_for('inspect_saved_session', job_id=job_id) }}"
+         class="button button--ghost js-page-transition"
+         data-loader-label="Retour à l’analyse…">← Retour</a>
+    </div>
+  </div>
+
+  <div class="pareto-stats reveal reveal--delay-1">
+    <div class="pstat">
+      <span class="pstat__value">{{ chain_datasets | length }}</span>
+      <span class="pstat__label">Chaînes suivies</span>
+    </div>
+    <div class="pstat">
+      <span class="pstat__value">{{ nature_datasets | length }}</span>
+      <span class="pstat__label">Catégories suivies</span>
+    </div>
+    <div class="pstat pstat--highlight">
+      <span class="pstat__value">{{ best_chain.key if best_chain else '—' }}</span>
+      <span class="pstat__label">Meilleure dérive</span>
+    </div>
+    <div class="pstat">
+      <span class="pstat__value">{{ risk_chain.key if risk_chain else '—' }}</span>
+      <span class="pstat__label">Risque principal</span>
+    </div>
+  </div>
+
+  <div class="analysis-grid">
+    <div class="analysis-surface reveal reveal--delay-2">
+      <div class="card__header">
+        <h2>Tendance par chaîne</h2>
+        <p>Taux moyen annuel avec projection et tendance linéaire.</p>
+      </div>
+      <div class="chart-container chart-container--tall chart-shell chart-shell--loading" id="trendChartChainsShell">
+        <canvas id="trendChartChains"></canvas>
+      </div>
+    </div>
+
+    <div class="analysis-surface reveal reveal--delay-3">
+      <div class="card__header">
+        <h2>Tendance par catégorie</h2>
+        <p>Lecture annuelle globale des familles ELEC, MECA, EXPL, SGX…</p>
+      </div>
+      <div class="chart-container chart-container--tall chart-shell chart-shell--loading" id="trendChartNaturesShell">
+        <canvas id="trendChartNatures"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card reveal reveal--delay-2">
+  <div class="card__header">
+    <h2>Récapitulatif par chaîne</h2>
+    <p>Delta = variation entre la première et la dernière année disponible.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Chaîne</th>
+          {% for year in years %}<th class="text-right">{{ year }}</th>{% endfor %}
+          {% if next_year %}<th class="text-right">{{ next_year }} (proj.)</th>{% endif %}
+          <th class="text-right">Delta</th>
+          <th>Tendance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ds in chain_datasets %}
+        <tr>
+          <td>
+            <span class="chain-dot" style="background:{{ ds.color }}"></span>
+            {{ ds.key }}
+          </td>
+          {% for value in ds.data %}
+            <td class="text-right">{{ "%.2f"|format(value) if value is not none else '—' }}</td>
+          {% endfor %}
+          {% if next_year %}
+            <td class="text-right text-muted">{{ "%.2f"|format(ds.next) if ds.next is not none else '—' }}</td>
+          {% endif %}
+          <td class="text-right">{{ "%.2f"|format(ds.delta) if ds.delta is not none else '—' }}</td>
+          <td>
+            {% if ds.delta is not none %}
+              {% if ds.delta < 0 %}
+                <span class="trend-badge trend-badge--down">↓ Amélioration</span>
+              {% elif ds.delta > 0 %}
+                <span class="trend-badge trend-badge--up">↑ Dégradation</span>
+              {% else %}
+                <span class="trend-badge trend-badge--flat">→ Stable</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card reveal reveal--delay-3">
+  <div class="card__header">
+    <h2>Récapitulatif par catégorie</h2>
+    <p>Permet de voir si la dérive vient surtout d’un type d’arrêt.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Catégorie</th>
+          {% for year in years %}<th class="text-right">{{ year }}</th>{% endfor %}
+          {% if next_year %}<th class="text-right">{{ next_year }} (proj.)</th>{% endif %}
+          <th class="text-right">Delta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ds in nature_datasets %}
+        <tr>
+          <td><span class="pill pill--nature nature-badge nature-badge--{{ ds.key | lower }}">{{ ds.key }}</span></td>
+          {% for value in ds.data %}
+            <td class="text-right">{{ "%.2f"|format(value) if value is not none else '—' }}</td>
+          {% endfor %}
+          {% if next_year %}
+            <td class="text-right text-muted">{{ "%.2f"|format(ds.next) if ds.next is not none else '—' }}</td>
+          {% endif %}
+          <td class="text-right">{{ "%.2f"|format(ds.delta) if ds.delta is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+<script>
+(function () {
+  var years = {{ years | tojson }};
+  var nextYear = {{ next_year | tojson }};
+  var chainDatasets = {{ chain_datasets | tojson }};
+  var natureDatasets = {{ nature_datasets | tojson }};
+
+  function buildSeries(items) {
+    var labels = years.map(String);
+    if (nextYear) labels.push(String(nextYear) + ' ▸');
+
+    var datasets = [];
+    items.forEach(function (item) {
+      var realData = item.data.slice();
+      if (nextYear) realData.push(null);
+      datasets.push({
+        label: item.key,
+        data: realData,
+        borderColor: item.color,
+        backgroundColor: item.color + '20',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: false,
+        tension: 0.24,
+        spanGaps: false
+      });
+
+      var trendData = item.trend ? item.trend.slice() : [];
+      if (nextYear && item.next !== null) trendData.push(item.next);
+      if (trendData.length) {
+        datasets.push({
+          label: item.key + ' (tendance)',
+          data: trendData,
+          borderColor: item.color,
+          borderDash: [6, 5],
+          borderWidth: 1.6,
+          pointRadius: nextYear ? [].concat(Array(years.length).fill(0), [4]) : 0,
+          pointStyle: 'triangle',
+          fill: false,
+          tension: 0,
+          spanGaps: true
+        });
+      }
+    });
+
+    return { labels: labels, datasets: datasets };
+  }
+
+  function createTrendChart(canvasId, items, yLabel) {
+    var payload = buildSeries(items);
+    var shell = document.getElementById(canvasId + 'Shell');
+    var ctx = document.getElementById(canvasId).getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: payload,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              filter: function (item) {
+                return !item.text.includes('(tendance)');
+              }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                if (ctx.parsed.y === null) return null;
+                return ctx.dataset.label + ' : ' + ctx.parsed.y.toFixed(2) + ' %';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Année' },
+            grid: { color: '#E8ECF2' }
+          },
+          y: {
+            title: { display: true, text: yLabel },
+            grid: { color: '#E8ECF2' },
+            ticks: {
+              callback: function (value) { return value.toFixed(1) + ' %'; }
+            }
+          }
+        }
+      }
+    });
+    if (shell) shell.classList.remove('chart-shell--loading');
+  }
+
+  createTrendChart('trendChartChains', chainDatasets, 'Taux moyen chaîne (%)');
+  createTrendChart('trendChartNatures', natureDatasets, 'Taux moyen catégorie (%)');
+}());
+</script>
+{% endblock %}

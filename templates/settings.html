@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Paramètres — HR Brasserie{% endblock %}
+
+{% block content %}
+<section class="card settings-card">
+  <div class="card__header">
+    <h2>⚙ Paramètres</h2>
+    <p>Configuration du serveur d'envoi d'emails et des préférences de rapport.</p>
+  </div>
+
+  <form action="{{ url_for('settings_save') }}" method="post" class="settings-form">
+
+    <!-- ── SMTP ──────────────────────────────────────────────── -->
+    <fieldset class="settings-section">
+      <legend class="settings-section__title">
+        <span class="settings-section__icon">📧</span> Serveur d'envoi (SMTP)
+      </legend>
+
+      <div class="settings-grid">
+        <label class="field">
+          <span>Serveur SMTP</span>
+          <input type="text" name="smtp_host"
+                 value="{{ s.smtp_host }}" placeholder="mail.exemple.com">
+        </label>
+        <label class="field">
+          <span>Port</span>
+          <input type="number" name="smtp_port" min="1" max="65535"
+                 value="{{ s.smtp_port }}" placeholder="587">
+        </label>
+      </div>
+
+      <div class="settings-grid">
+        <label class="field">
+          <span>Identifiant SMTP</span>
+          <input type="text" name="smtp_user" autocomplete="username"
+                 value="{{ s.smtp_user }}" placeholder="user@exemple.com">
+        </label>
+        <label class="field">
+          <span>Mot de passe SMTP
+            {% if s.has_password %}
+              <span class="badge badge--ok">configuré</span>
+            {% else %}
+              <span class="badge badge--warn">non renseigné</span>
+            {% endif %}
+          </span>
+          <input type="password" name="smtp_pass" autocomplete="current-password"
+                 placeholder="Laisser vide pour ne pas modifier">
+        </label>
+      </div>
+
+      <div class="settings-grid settings-grid--3">
+        <label class="field">
+          <span>Adresse expéditeur (From)</span>
+          <input type="email" name="smtp_from"
+                 value="{{ s.smtp_from }}" placeholder="noreply@exemple.com">
+        </label>
+        <label class="field">
+          <span>Nom affiché expéditeur</span>
+          <input type="text" name="smtp_from_name"
+                 value="{{ s.smtp_from_name }}" placeholder="RAPPORT PDF">
+        </label>
+        <label class="toggle settings-toggle">
+          <input type="checkbox" name="smtp_use_tls"
+                 {% if s.smtp_use_tls %}checked{% endif %}>
+          <span>Utiliser STARTTLS (port 587)</span>
+        </label>
+        <label class="toggle settings-toggle">
+          <input type="checkbox" name="smtp_use_ssl"
+                 {% if s.smtp_use_ssl %}checked{% endif %}>
+          <span>Utiliser SSL direct (port 465)</span>
+        </label>
+      </div>
+
+      <div class="settings-test-row">
+        <button type="button" class="button button--outline" id="testSmtpBtn">
+          Tester la connexion
+        </button>
+        <span class="settings-test-result" id="testSmtpResult" aria-live="polite"></span>
+      </div>
+    </fieldset>
+
+    <!-- ── Email par défaut ───────────────────────────────────── -->
+    <fieldset class="settings-section">
+      <legend class="settings-section__title">
+        <span class="settings-section__icon">✉️</span> Envoi par défaut
+      </legend>
+
+      <label class="field">
+        <span>Destinataires par défaut <em>(un par ligne ou séparés par virgule)</em></span>
+        <textarea name="default_recipients" rows="3"
+          placeholder="responsable@brasserie.fr&#10;direction@brasserie.fr">{{ s.default_recipients | join('\n') }}</textarea>
+        <small class="field__hint">Ces adresses seront proposées dans la popup de fin de génération, avec saisie libre toujours possible.</small>
+      </label>
+
+      <label class="field">
+        <span>Sujet du message</span>
+        <input type="text" name="subject_template"
+               value="{{ s.subject_template }}"
+               placeholder="Rapport Arrêts {label} — {year}">
+        <small class="field__hint">Variables : <code>{label}</code> = nom du rapport, <code>{year}</code> = année</small>
+      </label>
+
+      <label class="field">
+        <span>Signature</span>
+        <textarea name="email_signature" rows="3"
+          placeholder="Ce rapport a été généré automatiquement…">{{ s.email_signature }}</textarea>
+      </label>
+    </fieldset>
+
+    <div class="settings-actions">
+      <button type="submit" class="button button--primary button--lg">
+        Sauvegarder les paramètres
+      </button>
+      <a href="{{ url_for('index') }}" class="button button--ghost">Annuler</a>
+    </div>
+
+  </form>
+</section>
+
+<script>
+document.getElementById('testSmtpBtn').addEventListener('click', function () {
+  var btn    = this;
+  var result = document.getElementById('testSmtpResult');
+  btn.disabled    = true;
+  btn.textContent = '…';
+  result.textContent = '';
+  result.className   = 'settings-test-result';
+
+  fetch('/api/test-smtp', { method: 'POST' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      btn.disabled    = false;
+      btn.textContent = 'Tester la connexion';
+      result.textContent = d.ok ? ('✓ ' + d.message) : ('✕ ' + (d.error || 'Échec'));
+      result.className   = 'settings-test-result settings-test-result--' + (d.ok ? 'ok' : 'error');
+    })
+    .catch(function () {
+      btn.disabled    = false;
+      btn.textContent = 'Tester la connexion';
+      result.textContent = '✕ Erreur réseau.';
+      result.className   = 'settings-test-result settings-test-result--error';
+    });
+});
+</script>
+{% endblock %}

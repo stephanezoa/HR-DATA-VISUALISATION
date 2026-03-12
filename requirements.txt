@@ -1,0 +1,7 @@
+pandas==3.0.1
+openpyxl==3.1.5
+matplotlib==3.10.8
+seaborn==0.13.2
+reportlab==4.4.10
+XlsxWriter==3.2.9
+Flask==3.1.3
