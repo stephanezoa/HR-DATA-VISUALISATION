@@ -1,0 +1,73 @@
+═══════════════════════════════════════════════════════════════
+  COMMANDES D'INSTALLATION - HR DATA VISUALIZATION
+═══════════════════════════════════════════════════════════════
+
+✅ Partie 1: Préparation (TERMINÉE)
+   - Dépendances Python installées
+   - Gunicorn installé
+   - Application testée avec succès
+   - Répertoires créés
+
+📋 Partie 2: Déploiement (À EXÉCUTER)
+
+Copiez et exécutez les commandes ci-dessous dans votre terminal :
+
+───────────────────────────────────────────────────────────────
+# 1. Installer le service systemd
+───────────────────────────────────────────────────────────────
+sudo cp /home/perenkap/HR-DATA-VISUALISATION/data-visual.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+───────────────────────────────────────────────────────────────
+# 2. Configurer Nginx
+───────────────────────────────────────────────────────────────
+sudo cp /home/perenkap/HR-DATA-VISUALISATION/data-visual.nginx.conf /etc/nginx/sites-available/data-visual
+sudo ln -sf /etc/nginx/sites-available/data-visual /etc/nginx/sites-enabled/
+
+───────────────────────────────────────────────────────────────
+# 3. Tester la configuration Nginx
+───────────────────────────────────────────────────────────────
+sudo nginx -t
+
+───────────────────────────────────────────────────────────────
+# 4. Démarrer les services
+───────────────────────────────────────────────────────────────
+sudo systemctl enable data-visual.service
+sudo systemctl start data-visual.service
+sudo systemctl reload nginx
+
+───────────────────────────────────────────────────────────────
+# 5. Vérifier que tout fonctionne
+───────────────────────────────────────────────────────────────
+sudo systemctl status data-visual.service
+
+───────────────────────────────────────────────────────────────
+# 6. Voir les logs en temps réel (optionnel)
+───────────────────────────────────────────────────────────────
+sudo journalctl -u data-visual.service -f
+
+═══════════════════════════════════════════════════════════════
+
+🌐 URL de l'application: https://data-visual.perenkap-api.online
+
+═══════════════════════════════════════════════════════════════
+  COMMANDES UTILES APRÈS INSTALLATION
+═══════════════════════════════════════════════════════════════
+
+# Redémarrer l'application
+sudo systemctl restart data-visual.service
+
+# Arrêter l'application
+sudo systemctl stop data-visual.service
+
+# Voir les logs
+sudo journalctl -u data-visual.service -n 100
+
+# Logs Gunicorn
+tail -f /home/perenkap/HR-DATA-VISUALISATION/logs/error.log
+tail -f /home/perenkap/HR-DATA-VISUALISATION/logs/access.log
+
+# Tester l'application localement
+curl http://127.0.0.1:5001
+
+═══════════════════════════════════════════════════════════════

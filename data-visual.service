@@ -1,0 +1,18 @@
+[Unit]
+Description=HR Data Visualization Flask Application
+After=network.target
+
+[Service]
+Type=simple
+User=perenkap
+Group=perenkap
+WorkingDirectory=/home/perenkap/HR-DATA-VISUALISATION
+Environment="PATH=/home/perenkap/HR-DATA-VISUALISATION/venv/bin"
+ExecStart=/home/perenkap/HR-DATA-VISUALISATION/venv/bin/gunicorn --bind 127.0.0.1:5002 --workers 4 --timeout 120 --access-logfile /home/perenkap/HR-DATA-VISUALISATION/logs/access.log --error-logfile /home/perenkap/HR-DATA-VISUALISATION/logs/error.log app:app
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/perenkap/HR-DATA-VISUALISATION/logs/stdout.log
+StandardError=append:/home/perenkap/HR-DATA-VISUALISATION/logs/stderr.log
+
+[Install]
+WantedBy=multi-user.target

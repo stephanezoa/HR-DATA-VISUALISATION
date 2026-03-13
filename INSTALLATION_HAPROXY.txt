@@ -1,0 +1,113 @@
+═══════════════════════════════════════════════════════════════
+  INSTALLATION FINALE - HR DATA VISUALIZATION avec HAProxy
+═══════════════════════════════════════════════════════════════
+
+✅ DÉJÀ FAIT :
+  - Projet installé dans /home/perenkap/HR-DATA-VISUALISATION
+  - Dépendances Python installées
+  - Service systemd créé (port 5002 pour éviter conflit avec maviance)
+
+📋 ÉTAPES À SUIVRE :
+
+───────────────────────────────────────────────────────────────
+ÉTAPE 1 : Installer le service systemd (DÉJÀ FAIT)
+───────────────────────────────────────────────────────────────
+sudo cp /home/perenkap/HR-DATA-VISUALISATION/data-visual.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+───────────────────────────────────────────────────────────────
+ÉTAPE 2 : Modifier HAProxy
+───────────────────────────────────────────────────────────────
+
+sudo nano /etc/haproxy/haproxy.cfg
+
+# Dans la section "frontend https-in", après la ligne 56 :
+#   use_backend maviance_backend if is_maviance_subdomain
+#
+# Ajoutez ces 2 lignes :
+
+    acl is_datavisual_subdomain hdr(host) -i data-visual.perenkap-api.online
+    use_backend datavisual_backend if is_datavisual_subdomain
+
+
+# À la fin du fichier, après le "backend maviance_backend", ajoutez :
+
+backend datavisual_backend
+    mode http
+    option forwardfor
+    http-request set-header X-Forwarded-Proto https
+    http-request set-header X-Forwarded-Port 443
+    timeout server 120000
+    server datavisual1 127.0.0.1:5002 check
+
+
+Sauvegardez (Ctrl+O, Entrée, Ctrl+X)
+
+───────────────────────────────────────────────────────────────
+ÉTAPE 3 : Tester la configuration HAProxy
+───────────────────────────────────────────────────────────────
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+
+# Si OK, créer une sauvegarde et recharger :
+sudo cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak-datavisual-$(date +%Y%m%d-%H%M)
+sudo systemctl reload haproxy
+
+───────────────────────────────────────────────────────────────
+ÉTAPE 4 : Démarrer le service data-visual
+───────────────────────────────────────────────────────────────
+sudo systemctl enable data-visual.service
+sudo systemctl start data-visual.service
+
+# Vérifier le statut :
+sudo systemctl status data-visual.service
+
+───────────────────────────────────────────────────────────────
+ÉTAPE 5 : Vérifier que tout fonctionne
+───────────────────────────────────────────────────────────────
+
+# Test local (doit retourner du HTML) :
+curl http://127.0.0.1:5002
+
+# Voir les logs en temps réel :
+sudo journalctl -u data-visual.service -f
+
+# Tester via HTTPS (depuis un navigateur ou curl) :
+curl -I https://data-visual.perenkap-api.online
+
+═══════════════════════════════════════════════════════════════
+  🌐 URL FINALE
+═══════════════════════════════════════════════════════════════
+
+https://data-visual.perenkap-api.online
+
+═══════════════════════════════════════════════════════════════
+  COMMANDES DE MAINTENANCE
+═══════════════════════════════════════════════════════════════
+
+# Redémarrer l'application
+sudo systemctl restart data-visual.service
+
+# Voir les logs
+sudo journalctl -u data-visual.service -n 100 --no-pager
+tail -f ~/HR-DATA-VISUALISATION/logs/error.log
+tail -f ~/HR-DATA-VISUALISATION/logs/access.log
+
+# Recharger HAProxy après modification
+sudo systemctl reload haproxy
+
+# Vérifier les connexions
+sudo netstat -tlnp | grep :5002
+
+═══════════════════════════════════════════════════════════════
+  ARCHITECTURE
+═══════════════════════════════════════════════════════════════
+
+Internet (HTTPS:443)
+        ↓
+HAProxy (SSL termination)
+        ↓
+Gunicorn (127.0.0.1:5002) - 4 workers
+        ↓
+Flask App (HR Data Visualization)
+
+═══════════════════════════════════════════════════════════════
