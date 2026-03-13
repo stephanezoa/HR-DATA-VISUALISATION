@@ -12,7 +12,7 @@ import pandas as pd
 from flask import Flask, Response, flash, jsonify, make_response, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
-from generate_arrets_reports import DEFAULT_FOCUS_NATURES, ensure_theme
+from generate_arrets_reports import DEFAULT_FOCUS_NATURES, ensure_theme, generate_preview_png
 
 from .analysis import (
     build_calendar_payload,
@@ -268,6 +268,30 @@ def create_app() -> Flask:
             selected_natures = normalize_checkbox_list(request.form.getlist("natures"))
             equipment_filters = parse_equipment_filters(request.form.get("equipments", ""))
             include_overview = request.form.get("include_overview") == "on"
+
+            y_overrides: dict[str, tuple[float | None, float | None]] | None = None
+            raw_overrides = (request.form.get("y_overrides") or "").strip()
+            if raw_overrides:
+                try:
+                    import json as _json
+                    parsed = _json.loads(raw_overrides)
+                    if isinstance(parsed, dict):
+                        def _pct(v: Any) -> float | None:
+                            if v is None:
+                                return None
+                            try:
+                                return max(0.0, min(1.0, float(v) / 100.0))
+                            except (TypeError, ValueError):
+                                return None
+                        y_overrides = {
+                            str(eq): (_pct(vals[0]) if isinstance(vals, list) and len(vals) >= 1 else None,
+                                      _pct(vals[1]) if isinstance(vals, list) and len(vals) >= 2 else None)
+                            for eq, vals in parsed.items()
+                            if isinstance(vals, list)
+                        }
+                except Exception:
+                    pass
+
             job_title = build_job_title(selected_chains, selected_natures, mode, variant)
             job_subtitle = build_job_subtitle(year, mode, variant)
 
@@ -303,6 +327,7 @@ def create_app() -> Flask:
                     output_dir,
                     job_path,
                     run_path,
+                    y_overrides,
                 ),
                 daemon=True,
             )
@@ -321,6 +346,133 @@ def create_app() -> Flask:
         if snapshot is None:
             return jsonify(error="Job introuvable."), 404
         return jsonify(snapshot)
+
+    @app.get("/api/preview/<session_id>")
+    def api_preview(session_id: str):
+        """Return a base64 PNG of the first equipment page for a session/group."""
+        import base64
+        import json as _json
+        import threading as _threading
+
+        if not re.fullmatch(r"[0-9a-f]{32}", session_id):
+            return jsonify(error="Session invalide."), 400
+        job_path = JOB_DIR / session_id
+        workbook_path = resolve_session_workbook(job_path)
+        if workbook_path is None:
+            return jsonify(error="Session expirée."), 400
+        try:
+            dataset = get_workbook_dataset(workbook_path)
+            year_raw = (request.args.get("year") or "").strip()
+            try:
+                year = int(year_raw) if year_raw else dataset.available_years[-1]
+            except ValueError:
+                year = dataset.available_years[-1]
+            if year not in dataset.available_years:
+                year = dataset.available_years[-1]
+
+            chain_filter = (request.args.get("chain") or "").strip().upper() or None
+            nature_filter = (request.args.get("nature") or "").strip().upper() or None
+
+            groups = dataset.available_groups(
+                year=year,
+                chains=[chain_filter] if chain_filter else None,
+                natures=[nature_filter] if nature_filter else None,
+            )
+            if not groups:
+                return jsonify(error="Aucun groupe disponible pour ces filtres."), 404
+
+            y_overrides: dict[str, tuple[float | None, float | None]] | None = None
+            raw_ov = (request.args.get("y_overrides") or "").strip()
+            if raw_ov:
+                try:
+                    parsed = _json.loads(raw_ov)
+                    if isinstance(parsed, dict):
+                        def _pct_arg(v: Any) -> float | None:
+                            if v is None:
+                                return None
+                            try:
+                                return max(0.0, min(1.0, float(v) / 100.0))
+                            except (TypeError, ValueError):
+                                return None
+                        y_overrides = {
+                            str(eq): (_pct_arg(vals[0]) if isinstance(vals, list) and len(vals) >= 1 else None,
+                                      _pct_arg(vals[1]) if isinstance(vals, list) and len(vals) >= 2 else None)
+                            for eq, vals in parsed.items()
+                            if isinstance(vals, list)
+                        }
+                except Exception:
+                    pass
+
+            result: dict[str, Any] = {}
+            exc_holder: list[Exception] = []
+
+            def _render() -> None:
+                try:
+                    all_pages: list[bytes] = []
+                    for grp in groups:
+                        grp_pages = generate_preview_png(dataset, year, grp, y_overrides=y_overrides, dpi=80)
+                        all_pages.extend(grp_pages)
+                    result["bytes"] = all_pages
+                except Exception as exc:
+                    exc_holder.append(exc)
+
+            t = _threading.Thread(target=_render, daemon=True)
+            t.start()
+            t.join(timeout=240)
+
+            if t.is_alive():
+                return jsonify(error="Délai dépassé (trop de groupes). Filtrez par chaîne/catégorie."), 504
+            if exc_holder:
+                raise exc_holder[0]
+
+            pages = result["bytes"]  # list[bytes]
+            images = [base64.b64encode(p).decode("ascii") for p in pages]
+            # Group label: single group or summary
+            if len(groups) == 1:
+                group_label = f"{groups[0].chain} / {groups[0].nature}"
+            else:
+                group_label = f"{len(groups)} groupes"
+            return jsonify(ok=True, images=images, group=group_label, year=year)
+        except Exception as exc:  # noqa: BLE001
+            routes_logger.exception("Erreur prévisualisation")
+            return jsonify(error=f"Erreur : {exc}"), 500
+
+    @app.get("/api/equipments/<session_id>")
+    def api_equipments(session_id: str):
+        """Return list of equipments for a given session/year/chain/nature filter."""
+        if not re.fullmatch(r"[0-9a-f]{32}", session_id):
+            return jsonify(error="Session invalide."), 400
+        job_path = JOB_DIR / session_id
+        workbook_path = resolve_session_workbook(job_path)
+        if workbook_path is None:
+            return jsonify(error="Session expirée."), 400
+        try:
+            dataset = get_workbook_dataset(workbook_path)
+            year_raw = (request.args.get("year") or "").strip()
+            try:
+                year = int(year_raw) if year_raw else dataset.available_years[-1]
+            except ValueError:
+                year = dataset.available_years[-1]
+            if year not in dataset.available_years:
+                year = dataset.available_years[-1]
+
+            chain_filter = (request.args.get("chain") or "").strip().upper() or None
+            nature_filter = (request.args.get("nature") or "").strip().upper() or None
+            groups = dataset.available_groups(
+                year=year,
+                chains=[chain_filter] if chain_filter else None,
+                natures=[nature_filter] if nature_filter else None,
+            )
+            equipments: list[str] = []
+            seen: set[str] = set()
+            for group in groups:
+                for eq in dataset.equipments_for_group(year, group, None):
+                    if eq not in seen:
+                        seen.add(eq)
+                        equipments.append(eq)
+            return jsonify(ok=True, equipments=sorted(equipments), year=year)
+        except Exception as exc:  # noqa: BLE001
+            return jsonify(error=str(exc)), 500
 
     @app.get("/api/jobs")
     def api_jobs():

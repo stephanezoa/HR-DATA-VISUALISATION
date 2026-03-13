@@ -1,365 +1,1077 @@
 {% extends "base.html" %}
-{% block title %}Export des rapports — {{ filename }}{% endblock %}
+{% block title %}Export — {{ filename }}{% endblock %}
 
 {% block content %}
 
-  <!-- ── Outils d'analyse ──────────────────────────────────────────────────── -->
-  <section class="card analysis-toolbar-card">
-    <div class="card__header">
-      <h2>Outils d'analyse</h2>
-      <p>Explorez vos données en profondeur ou exportez vers Excel.</p>
-    </div>
-    <div class="analysis-toolbar">
-      <a href="{{ url_for('pareto', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture de Pareto…">
-        <span class="analysis-btn__icon">📊</span>
-        <span>
-          <strong>Analyse Pareto</strong>
-          <small>Top machines causant 80 % des arrêts</small>
-        </span>
-      </a>
-      <a href="{{ url_for('trend', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture de Tendance…">
-        <span class="analysis-btn__icon">📈</span>
-        <span>
-          <strong>Tendance</strong>
-          <small>Évolution multi-années + régression</small>
-        </span>
-      </a>
-      <a href="{{ url_for('calendar', job_id=job_id) }}" class="analysis-btn js-page-transition" data-loader-label="Ouverture du Calendrier…">
-        <span class="analysis-btn__icon">📅</span>
-        <span>
-          <strong>Calendrier</strong>
-          <small>Vue hebdomadaire + export iCal</small>
-        </span>
-      </a>
-      <form action="{{ url_for('export_excel', job_id=job_id) }}" method="post" style="margin:0">
-        <button type="submit" class="analysis-btn analysis-btn--btn">
-          <span class="analysis-btn__icon">🔗</span>
-          <span>
-            <strong>Export Excel</strong>
-            <small>Tableau de bord .xlsx enrichi</small>
-          </span>
-        </button>
-      </form>
-    </div>
-  </section>
+<!-- ── Barre d'analyse ─────────────────────────────────────────────────── -->
+<nav class="tool-rail">
+  <a href="{{ url_for('pareto', job_id=job_id) }}"
+     class="tool-rail__item js-page-transition"
+     data-loader-label="Ouverture de Pareto…">
+    <span class="tool-rail__icon">📊</span>
+    <span class="tool-rail__label">Pareto</span>
+  </a>
+  <a href="{{ url_for('trend', job_id=job_id) }}"
+     class="tool-rail__item js-page-transition"
+     data-loader-label="Ouverture de Tendance…">
+    <span class="tool-rail__icon">📈</span>
+    <span class="tool-rail__label">Tendance</span>
+  </a>
+  <a href="{{ url_for('calendar', job_id=job_id) }}"
+     class="tool-rail__item js-page-transition"
+     data-loader-label="Ouverture du Calendrier…">
+    <span class="tool-rail__icon">📅</span>
+    <span class="tool-rail__label">Calendrier</span>
+  </a>
+  <form action="{{ url_for('export_excel', job_id=job_id) }}" method="post">
+    <button type="submit" class="tool-rail__item tool-rail__item--btn">
+      <span class="tool-rail__icon">📥</span>
+      <span class="tool-rail__label">Excel</span>
+    </button>
+  </form>
+</nav>
 
-  <!-- ── Métadonnées du classeur ─────────────────────────────────────── -->
-  <section class="card">
-    <div class="card__header">
-      <h2>2 · Classeur reconnu</h2>
-      <p>Feuilles, équipements et groupes ont été analysés avec succès.</p>
-    </div>
+<!-- ── Bannière fichier ────────────────────────────────────────────────── -->
+<div class="file-banner">
+  <div class="file-banner__meta">
+    <span class="file-banner__name" title="{{ filename }}">{{ filename | truncate(42, True, '…') }}</span>
+    <span class="file-banner__sep">·</span>
+    <span class="file-banner__year">{{ default_year }}</span>
+    <span class="file-banner__sep">·</span>
+    <span class="file-banner__groups">{{ groups | length }} groupe{{ 's' if groups | length > 1 }}</span>
+    <span class="file-banner__sep">·</span>
+    <span class="file-banner__equips">{{ groups | sum(attribute='equipment_count') }} équipements</span>
+  </div>
+  {% if metadata.sheets %}
+  <div class="file-banner__sheets">
+    {% for sheet in metadata.sheets %}
+      <span class="sheet-chip">{{ sheet }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
 
-    <div class="stats-grid">
-      <article class="stat">
-        <span class="stat__label">Fichier</span>
-        <strong class="stat__value" title="{{ filename }}">
-          {{ filename | truncate(38, True, '…') }}
-        </strong>
-      </article>
-      <article class="stat">
-        <span class="stat__label">Application</span>
-        <strong class="stat__value">{{ metadata.application or "Microsoft Excel" }}</strong>
-      </article>
-      <article class="stat">
-        <span class="stat__label">Version Excel</span>
-        <strong class="stat__value">{{ metadata.excel_version or "inconnue" }}</strong>
-      </article>
-      <article class="stat">
-        <span class="stat__label">Auteur</span>
-        <strong class="stat__value">{{ metadata.creator or "inconnu" }}</strong>
-      </article>
-      <article class="stat">
-        <span class="stat__label">Année par défaut</span>
-        <strong class="stat__value">{{ default_year }}</strong>
-      </article>
-      <article class="stat">
-        <span class="stat__label">Groupes détectés</span>
-        <strong class="stat__value">{{ groups | length }}</strong>
-      </article>
-    </div>
+<!-- ── Corps principal ─────────────────────────────────────────────────── -->
+<div class="export-layout">
 
-    {% if metadata.sheets %}
-      <div class="sheets-panel">
-        <h3>Feuilles détectées</h3>
-        <div class="pill-row">
-          {% for sheet in metadata.sheets %}
-            <span class="pill">{{ sheet }}</span>
-          {% endfor %}
+  <!-- ── Colonne gauche : configurateur ─────────────────────────────── -->
+  <div class="export-config">
+
+    <!-- Filtres de base -->
+    <section class="config-card">
+      <form action="{{ url_for('generate') }}" method="post"
+            id="main-export-form"
+            class="js-generate-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+
+        <!-- Année + mode + variante -->
+        <div class="config-section">
+          <h3 class="config-section__title">Paramètres d'export</h3>
+          <div class="config-row-3">
+            <label class="field field--sm">
+              <span>Année</span>
+              <select name="year">
+                {% for year in years %}
+                  <option value="{{ year }}"
+                    {% if year == default_year %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="field field--sm">
+              <span>Mode</span>
+              <select name="mode">
+                <option value="combined" selected>PDF unique</option>
+                <option value="grouped">Un PDF / groupe (ZIP)</option>
+                <option value="both">Les deux (ZIP)</option>
+              </select>
+            </label>
+
+            <label class="field field--sm">
+              <span>Découpage</span>
+              <select name="variant">
+                <option value="standard" selected>Sélection directe</option>
+                <option value="by_chain">Par chaîne</option>
+                <option value="by_nature">Par catégorie</option>
+                <option value="by_group">Par groupe</option>
+              </select>
+            </label>
+          </div>
         </div>
-      </div>
-    {% endif %}
-  </section>
 
-  <!-- ── Export rapide ───────────────────────────────────────────────── -->
-  <section class="card quick-export-card">
-    <div class="card__header">
-      <h2>3 · Export rapide</h2>
-      <p>
-        Cliquez sur une chaîne ou une catégorie pour lancer un export en arrière-plan.
-        Une notification apparaîtra dès que le PDF sera prêt pour l'année <strong>{{ default_year }}</strong>.
-      </p>
-    </div>
+        <!-- Chaînes -->
+        <div class="config-section">
+          <div class="config-section__head">
+            <h3 class="config-section__title">Chaînes</h3>
+            <button type="button" class="link-btn js-toggle-all" data-target="chains">Tout / rien</button>
+          </div>
+          <div class="chip-grid">
+            {% for chain in chains %}
+              <label class="chip-label">
+                <input type="checkbox" name="chains" value="{{ chain }}" checked>
+                <span class="chip">{{ chain }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
 
-    <div class="quick-export-grid">
+        <!-- Catégories -->
+        <div class="config-section">
+          <div class="config-section__head">
+            <h3 class="config-section__title">Catégories</h3>
+            <button type="button" class="link-btn js-toggle-all" data-target="natures">Tout / rien</button>
+          </div>
+          <div class="chip-grid">
+            {% for nature in natures %}
+              <label class="chip-label">
+                <input type="checkbox" name="natures" value="{{ nature }}" checked>
+                <span class="chip">{{ nature }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
 
-      <!-- Par chaîne -->
-      <div class="quick-section">
-        <h3 class="quick-section__title">
-          <span class="quick-section__badge quick-section__badge--chain">Chaîne</span>
-          Par chaîne
-        </h3>
-        <div class="quick-btns">
-          {% for chain in chains %}
-            <form action="{{ url_for('generate') }}" method="post"
-                  class="quick-form js-generate-form">
-              <input type="hidden" name="job_id"         value="{{ job_id }}">
-              <input type="hidden" name="year"           value="{{ default_year }}">
-              <input type="hidden" name="mode"           value="combined">
-              <input type="hidden" name="variant"        value="standard">
-              <input type="hidden" name="include_overview" value="on">
-              <input type="hidden" name="chains"         value="{{ chain }}">
-              {% for nature in natures %}
-                <input type="hidden" name="natures" value="{{ nature }}">
-              {% endfor %}
-              <button type="submit" class="button button--chain">
-                {{ chain }}
+        <!-- Options -->
+        <div class="config-section">
+          <h3 class="config-section__title">Options</h3>
+          <div class="option-row">
+            <label class="toggle-label">
+              <input type="checkbox" name="include_overview" checked>
+              <span class="toggle-track"></span>
+              <span>Page de synthèse multi-machines</span>
+            </label>
+          </div>
+          <div class="field field--sm" style="margin-top:.75rem">
+            <span>Équipements spécifiques <em>(optionnel)</em></span>
+            <textarea name="equipments" rows="2"
+              placeholder="DATEUSE, PALETTISEUR…"></textarea>
+          </div>
+        </div>
+
+        <!-- ── Axes Y par équipement ─────────────────────────────────── -->
+        <div class="config-section config-section--axes" id="axes-section">
+          <div class="config-section__head">
+            <h3 class="config-section__title">Axes Y par équipement <span class="badge-opt">optionnel</span></h3>
+          </div>
+          <p class="config-hint">
+            Chargez les équipements pour fixer manuellement les limites de chaque courbe.
+            Laissez vide = échelle automatique.
+          </p>
+
+          <div class="axes-loader">
+            <label class="field field--sm">
+              <span>Chaîne</span>
+              <select id="vp-chain">
+                <option value="">— toutes —</option>
+                {% for chain in chains %}
+                  <option value="{{ chain }}">{{ chain }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field field--sm">
+              <span>Catégorie</span>
+              <select id="vp-nature">
+                <option value="">— toutes —</option>
+                {% for nature in natures %}
+                  <option value="{{ nature }}">{{ nature }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button type="button" class="button button--outline button--sm" id="vp-load-btn">
+              Charger
+            </button>
+          </div>
+
+          <div id="vp-load-status" class="config-hint" style="color:var(--text-muted)"></div>
+
+          <div id="vp-equip-list" style="display:none">
+            <div class="equip-grid" id="vp-equip-tbody"></div>
+            <div class="axes-actions">
+              <button type="button" class="button button--ghost button--sm" id="btn-reset-axes">
+                Réinitialiser
               </button>
+              <button type="button" class="button button--outline" id="btn-preview" disabled>
+                Prévisualiser →
+              </button>
+            </div>
+          </div>
+
+          <input type="hidden" name="y_overrides" id="y_overrides_input" value="">
+        </div>
+
+        <!-- ── Action principale ────────────────────────────────────── -->
+        <button type="submit" class="button button--primary button--launch">
+          Lancer l'export →
+        </button>
+
+      </form>
+    </section>
+
+    <!-- ── Presets rapides ─────────────────────────────────────────── -->
+    <section class="config-card config-card--presets">
+      <h3 class="config-section__title">Exports rapides — {{ default_year }}</h3>
+
+      <div class="preset-group">
+        <span class="preset-group__label">Par chaîne</span>
+        <div class="preset-btns">
+          {% for chain in chains %}
+            <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+              <input type="hidden" name="job_id"          value="{{ job_id }}">
+              <input type="hidden" name="year"            value="{{ default_year }}">
+              <input type="hidden" name="mode"            value="combined">
+              <input type="hidden" name="variant"         value="standard">
+              <input type="hidden" name="include_overview" value="on">
+              <input type="hidden" name="chains"          value="{{ chain }}">
+              {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+              <button type="submit" class="preset-btn">{{ chain }}</button>
             </form>
           {% endfor %}
-
-          <!-- Toutes les chaînes -->
-          <form action="{{ url_for('generate') }}" method="post"
-                class="quick-form js-generate-form">
-            <input type="hidden" name="job_id"         value="{{ job_id }}">
-            <input type="hidden" name="year"           value="{{ default_year }}">
-            <input type="hidden" name="mode"           value="combined">
-            <input type="hidden" name="variant"        value="standard">
+          <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+            <input type="hidden" name="job_id"          value="{{ job_id }}">
+            <input type="hidden" name="year"            value="{{ default_year }}">
+            <input type="hidden" name="mode"            value="combined">
+            <input type="hidden" name="variant"         value="standard">
             <input type="hidden" name="include_overview" value="on">
-            {% for chain in chains %}
-              <input type="hidden" name="chains" value="{{ chain }}">
-            {% endfor %}
-            {% for nature in natures %}
-              <input type="hidden" name="natures" value="{{ nature }}">
-            {% endfor %}
-            <button type="submit" class="button button--primary">
-              Toutes les chaînes
-            </button>
+            {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+            {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+            <button type="submit" class="preset-btn preset-btn--all">Tout</button>
           </form>
         </div>
       </div>
 
-      <!-- Par catégorie (nature) -->
-      <div class="quick-section">
-        <h3 class="quick-section__title">
-          <span class="quick-section__badge quick-section__badge--nature">Catégorie</span>
-          Par catégorie
-        </h3>
-        <div class="quick-btns">
+      <div class="preset-group">
+        <span class="preset-group__label">Par catégorie</span>
+        <div class="preset-btns">
           {% for nature in natures %}
-            <form action="{{ url_for('generate') }}" method="post"
-                  class="quick-form js-generate-form">
-              <input type="hidden" name="job_id"         value="{{ job_id }}">
-              <input type="hidden" name="year"           value="{{ default_year }}">
-              <input type="hidden" name="mode"           value="combined">
-              <input type="hidden" name="variant"        value="standard">
+            <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+              <input type="hidden" name="job_id"          value="{{ job_id }}">
+              <input type="hidden" name="year"            value="{{ default_year }}">
+              <input type="hidden" name="mode"            value="combined">
+              <input type="hidden" name="variant"         value="standard">
               <input type="hidden" name="include_overview" value="on">
-              {% for chain in chains %}
-                <input type="hidden" name="chains" value="{{ chain }}">
-              {% endfor %}
+              {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
               <input type="hidden" name="natures" value="{{ nature }}">
-              <button type="submit" class="button button--nature">
-                {{ nature }}
-              </button>
+              <button type="submit" class="preset-btn preset-btn--nature">{{ nature }}</button>
             </form>
           {% endfor %}
         </div>
       </div>
 
-    </div>
-  </section>
-
-  <section class="card quick-export-card">
-    <div class="card__header">
-      <h2>4 · Presets d'export enrichis</h2>
-      <p>Préparez des packs variés par chaîne, catégorie ou groupe chaîne/catégorie.</p>
-    </div>
-
-    <div class="analysis-toolbar">
-      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
-        <input type="hidden" name="job_id" value="{{ job_id }}">
-        <input type="hidden" name="year" value="{{ default_year }}">
-        <input type="hidden" name="mode" value="combined">
-        <input type="hidden" name="variant" value="by_chain">
-        <input type="hidden" name="include_overview" value="on">
-        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
-        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
-        <button type="submit" class="analysis-btn analysis-btn--btn">
-          <span class="analysis-btn__icon">🧭</span>
-          <span>
-            <strong>Un pack par chaîne</strong>
-            <small>Un PDF complet par chaîne sélectionnée dans un ZIP</small>
-          </span>
-        </button>
-      </form>
-
-      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
-        <input type="hidden" name="job_id" value="{{ job_id }}">
-        <input type="hidden" name="year" value="{{ default_year }}">
-        <input type="hidden" name="mode" value="combined">
-        <input type="hidden" name="variant" value="by_nature">
-        <input type="hidden" name="include_overview" value="on">
-        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
-        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
-        <button type="submit" class="analysis-btn analysis-btn--btn">
-          <span class="analysis-btn__icon">🧩</span>
-          <span>
-            <strong>Un pack par catégorie</strong>
-            <small>Un PDF complet par type ELEC, MECA, EXPL, SGX…</small>
-          </span>
-        </button>
-      </form>
-
-      <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
-        <input type="hidden" name="job_id" value="{{ job_id }}">
-        <input type="hidden" name="year" value="{{ default_year }}">
-        <input type="hidden" name="mode" value="grouped">
-        <input type="hidden" name="variant" value="by_group">
-        <input type="hidden" name="include_overview" value="on">
-        {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
-        {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
-        <button type="submit" class="analysis-btn analysis-btn--btn">
-          <span class="analysis-btn__icon">🗂</span>
-          <span>
-            <strong>ZIP détaillé par groupe</strong>
-            <small>Un dossier par couple chaîne / catégorie</small>
-          </span>
-        </button>
-      </form>
-    </div>
-  </section>
-
-  <!-- ── Options avancées ───────────────────────────────────────────── -->
-  <section class="card layout-split">
-    <div>
-      <div class="card__header">
-        <h2>5 · Options avancées</h2>
-        <p>Personnalisez l'année, le mode d'export et le périmètre de génération.</p>
-      </div>
-
-      <form action="{{ url_for('generate') }}" method="post"
-            class="form-stack js-generate-form">
-        <input type="hidden" name="job_id" value="{{ job_id }}">
-
-        <div class="field-row">
-          <label class="field">
-            <span>Année</span>
-            <select name="year">
-              {% for year in years %}
-                <option value="{{ year }}"
-                  {% if year == default_year %}selected{% endif %}>{{ year }}</option>
-              {% endfor %}
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Mode d'export</span>
-            <select name="mode">
-              <option value="combined" selected>📄 PDF unique complet</option>
-              <option value="grouped">📁 Un PDF par groupe (ZIP)</option>
-              <option value="both">📦 Les deux (ZIP)</option>
-            </select>
-          </label>
+      <div class="preset-group">
+        <span class="preset-group__label">Packs variés</span>
+        <div class="preset-btns preset-btns--stacked">
+          <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+            <input type="hidden" name="job_id" value="{{ job_id }}">
+            <input type="hidden" name="year" value="{{ default_year }}">
+            <input type="hidden" name="mode" value="combined">
+            <input type="hidden" name="variant" value="by_chain">
+            <input type="hidden" name="include_overview" value="on">
+            {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+            {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+            <button type="submit" class="preset-btn preset-btn--pack">Un PDF par chaîne (ZIP)</button>
+          </form>
+          <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+            <input type="hidden" name="job_id" value="{{ job_id }}">
+            <input type="hidden" name="year" value="{{ default_year }}">
+            <input type="hidden" name="mode" value="combined">
+            <input type="hidden" name="variant" value="by_nature">
+            <input type="hidden" name="include_overview" value="on">
+            {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+            {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+            <button type="submit" class="preset-btn preset-btn--pack">Un PDF par catégorie (ZIP)</button>
+          </form>
+          <form action="{{ url_for('generate') }}" method="post" class="js-generate-form">
+            <input type="hidden" name="job_id" value="{{ job_id }}">
+            <input type="hidden" name="year" value="{{ default_year }}">
+            <input type="hidden" name="mode" value="grouped">
+            <input type="hidden" name="variant" value="by_group">
+            <input type="hidden" name="include_overview" value="on">
+            {% for chain in chains %}<input type="hidden" name="chains" value="{{ chain }}">{% endfor %}
+            {% for nature in natures %}<input type="hidden" name="natures" value="{{ nature }}">{% endfor %}
+            <button type="submit" class="preset-btn preset-btn--pack">ZIP détaillé par groupe</button>
+          </form>
         </div>
+      </div>
+    </section>
 
-        <label class="field">
-          <span>Découpage d'export</span>
-          <select name="variant">
-            <option value="standard" selected>Sélection unique selon les filtres</option>
-            <option value="by_chain">Un pack complet par chaîne</option>
-            <option value="by_nature">Un pack complet par catégorie</option>
-            <option value="by_group">Un pack par groupe chaîne / catégorie</option>
-          </select>
-        </label>
+  </div>
 
-        <div class="checkbox-panel">
-          <h3>Chaînes</h3>
-          <div class="checkbox-grid">
-            {% for chain in chains %}
-              <label class="checkbox-chip">
-                <input type="checkbox" name="chains" value="{{ chain }}" checked>
-                <span>{{ chain }}</span>
-              </label>
-            {% endfor %}
+  <!-- ── Colonne droite : récap groupes ─────────────────────────────── -->
+  <aside class="groups-panel">
+    <h3 class="groups-panel__title">Groupes détectés</h3>
+    {% set max_equip = groups | map(attribute='equipment_count') | max | default(1) %}
+    <div class="groups-list">
+      {% for group in groups %}
+        {% set pct = (group.equipment_count / max_equip * 100) | int %}
+        <div class="group-row {% if group.equipment_count == 0 %}group-row--empty{% endif %}">
+          <div class="group-row__tags">
+            <span class="gtag gtag--chain">{{ group.chain }}</span>
+            <span class="gtag gtag--nature gtag--{{ group.nature | lower }}">{{ group.nature }}</span>
           </div>
-        </div>
-
-        <div class="checkbox-panel">
-          <h3>Catégories (natures)</h3>
-          <div class="checkbox-grid">
-            {% for nature in natures %}
-              <label class="checkbox-chip">
-                <input type="checkbox" name="natures" value="{{ nature }}" checked>
-                <span>{{ nature }}</span>
-              </label>
-            {% endfor %}
+          <div class="group-row__bar">
+            <div class="group-row__fill" style="width:{{ pct }}%"></div>
           </div>
+          <span class="group-row__count">{{ group.equipment_count }}</span>
         </div>
-
-        <label class="field">
-          <span>Limiter à certains équipements <em>(optionnel)</em></span>
-          <textarea name="equipments" rows="3"
-            placeholder="Un équipement par ligne ou séparé par virgule.&#10;Ex : DATEUSE, PALETTISEUR"></textarea>
-        </label>
-
-        <label class="toggle">
-          <input type="checkbox" name="include_overview" checked>
-          <span>Inclure la page de synthèse multi-machines en tête de chaque groupe</span>
-        </label>
-
-        <button type="submit" class="button button--primary button--lg">
-          Lancer en arrière-plan →
-        </button>
-      </form>
+      {% endfor %}
     </div>
+    <p class="groups-panel__total">
+      {{ groups | length }} groupe{{ 's' if groups | length > 1 }} ·
+      <strong>{{ groups | sum(attribute='equipment_count') }}</strong> équipements
+    </p>
+  </aside>
 
-    <!-- Table récap des groupes -->
-    <aside class="card card--inset">
-      <div class="card__header">
-        <h2>Groupes détectés</h2>
-        <p>Équipements disponibles pour l'année {{ default_year }}.</p>
-      </div>
-      {% set max_equip = groups | map(attribute='equipment_count') | max | default(1) %}
-      <div class="group-table">
-        <div class="group-table__head">
-          <span>Chaîne</span>
-          <span>Catégorie</span>
-          <span>Équipements</span>
-        </div>
-        {% for group in groups %}
-          {% set pct = (group.equipment_count / max_equip * 100) | int %}
-          <div class="group-table__row
-            {% if group.equipment_count == 0 %}group-table__row--empty{% endif %}">
-            <span class="chain-badge">{{ group.chain }}</span>
-            <span class="nature-badge nature-badge--{{ group.nature | lower }}">
-              {{ group.nature }}
-            </span>
-            <div class="equip-bar-cell">
-              <div class="equip-bar">
-                <div class="equip-bar__fill" style="width:{{ pct }}%"></div>
-              </div>
-              <strong class="equip-bar__count">{{ group.equipment_count }}</strong>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
+</div>
 
-      <div class="recap-total">
-        <span>{{ groups | length }} groupe{{ 's' if groups | length > 1 }}</span>
-        <span>·</span>
-        <strong>{{ groups | sum(attribute='equipment_count') }}</strong> équipements au total
-      </div>
-    </aside>
-  </section>
+<!-- ── Modal prévisualisation ─────────────────────────────────────────── -->
+<div class="modal-backdrop" id="preview-modal" hidden>
+  <div class="modal">
+    <div class="modal__header">
+      <h3 id="preview-modal-title">Prévisualisation</h3>
+      <button type="button" class="modal__close" id="btn-preview-close" aria-label="Fermer">✕</button>
+    </div>
+    <div class="modal__body">
+      <div class="preview-spinner" id="preview-spinner">Génération en cours… (5–20 s)</div>
+      <div id="preview-pages" style="display:none;width:100%;display:none"></div>
+      <p class="preview-error" id="preview-error" style="display:none"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Styles ──────────────────────────────────────────────────────────── -->
+<style>
+
+/* ── Tool rail ── */
+.tool-rail {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.tool-rail form { margin: 0; }
+.tool-rail__item {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .45rem .9rem;
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--text, #1e293b);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.tool-rail__item:hover {
+  background: #fff;
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.1);
+}
+.tool-rail__item--btn { border: 1px solid var(--border, #e2e8f0); }
+.tool-rail__icon { font-size: 1rem; }
+.tool-rail__label { font-size: .82rem; }
+
+/* ── File banner ── */
+.file-banner {
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  padding: .75rem 1rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.file-banner__meta {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  font-size: .85rem;
+}
+.file-banner__name { font-weight: 600; color: var(--text, #1e293b); }
+.file-banner__sep { color: var(--border, #e2e8f0); }
+.file-banner__year, .file-banner__groups, .file-banner__equips {
+  color: var(--text-muted, #64748b);
+}
+.file-banner__sheets { display: flex; gap: .35rem; flex-wrap: wrap; }
+.sheet-chip {
+  font-size: .75rem;
+  padding: .15rem .5rem;
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 99px;
+  color: var(--text-muted, #64748b);
+}
+
+/* ── Layout ── */
+.export-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .export-layout { grid-template-columns: 1fr; }
+  .groups-panel { order: -1; }
+}
+
+/* ── Config cards ── */
+.config-card {
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.config-card--presets { padding: 1.25rem; }
+
+/* ── Config sections ── */
+.config-section {
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.config-section:last-of-type { border-bottom: none; }
+.config-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .6rem;
+}
+.config-section__title {
+  margin: 0 0 .6rem;
+  font-size: .82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted, #64748b);
+}
+.config-section__head .config-section__title { margin-bottom: 0; }
+
+.config-hint {
+  font-size: .82rem;
+  color: var(--text-muted, #64748b);
+  margin: 0 0 .75rem;
+  line-height: 1.5;
+}
+
+.badge-opt {
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--primary, #3b82f6);
+  background: rgba(59,130,246,.08);
+  padding: .1rem .4rem;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: .35rem;
+}
+
+.link-btn {
+  font-size: .78rem;
+  color: var(--primary, #3b82f6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover { opacity: .75; }
+
+.config-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .75rem;
+}
+@media (max-width: 600px) { .config-row-3 { grid-template-columns: 1fr 1fr; } }
+
+/* ── Fields ── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+.field span, .field > span {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.field select, .field textarea {
+  padding: .45rem .6rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  font-size: .875rem;
+  color: var(--text, #1e293b);
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s;
+  font-family: inherit;
+}
+.field select:focus, .field textarea:focus {
+  outline: none;
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+}
+.field textarea { resize: vertical; min-height: 52px; }
+
+/* ── Chip grid (checkboxes) ── */
+.chip-grid { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chip-label { display: contents; }
+.chip-label input { display: none; }
+.chip {
+  display: inline-block;
+  padding: .3rem .75rem;
+  border: 1.5px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: all .15s;
+  user-select: none;
+  background: var(--bg-subtle, #f8fafc);
+}
+.chip-label input:checked + .chip {
+  border-color: var(--primary, #3b82f6);
+  color: var(--primary, #3b82f6);
+  background: rgba(59,130,246,.07);
+  font-weight: 600;
+}
+.chip:hover { border-color: var(--primary, #3b82f6); }
+
+/* ── Toggle ── */
+.option-row { display: flex; flex-direction: column; gap: .5rem; }
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  cursor: pointer;
+  font-size: .875rem;
+  color: var(--text, #1e293b);
+}
+.toggle-label input { display: none; }
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  background: var(--border, #e2e8f0);
+  border-radius: 99px;
+  flex-shrink: 0;
+  position: relative;
+  transition: background .2s;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform .2s;
+}
+.toggle-label input:checked + .toggle-track { background: var(--primary, #3b82f6); }
+.toggle-label input:checked + .toggle-track::after { transform: translateX(16px); }
+
+/* ── Axes Y section ── */
+.config-section--axes { background: var(--bg-subtle, #f8fafc); }
+
+.axes-loader {
+  display: flex;
+  align-items: flex-end;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+}
+.axes-loader .field { flex: 1; min-width: 100px; }
+
+/* Equipment grid */
+.equip-grid {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  margin-bottom: .75rem;
+}
+.equip-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 7px;
+  padding: .4rem .75rem;
+  transition: border-color .15s;
+}
+.equip-row:has(.vp-y-input:not([value=""])) { border-color: var(--primary, #3b82f6); }
+.equip-row__name {
+  flex: 1;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.equip-row__inputs {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-shrink: 0;
+}
+.equip-row__lbl {
+  font-size: .72rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.vp-y-input {
+  width: 68px;
+  padding: .3rem .4rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 5px;
+  font-size: .85rem;
+  text-align: right;
+  background: var(--bg-subtle, #f8fafc);
+  color: var(--text, #1e293b);
+  transition: border-color .15s, box-shadow .15s;
+}
+.vp-y-input:focus {
+  outline: none;
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59,130,246,.12);
+  background: #fff;
+}
+
+.axes-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .6rem;
+  margin-top: .5rem;
+}
+
+/* ── Launch button ── */
+.button--launch {
+  display: block;
+  width: 100%;
+  margin: 1.25rem 0 0;
+  padding: .85rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  border-radius: 0 0 12px 12px;
+  text-align: center;
+}
+
+/* ── Preset section ── */
+.config-section__title { margin-bottom: .6rem; }
+.preset-group { margin-bottom: 1rem; }
+.preset-group:last-child { margin-bottom: 0; }
+.preset-group__label {
+  display: block;
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted, #64748b);
+  margin-bottom: .45rem;
+}
+.preset-btns { display: flex; flex-wrap: wrap; gap: .4rem; }
+.preset-btns--stacked { flex-direction: column; }
+.preset-btn {
+  padding: .35rem .8rem;
+  border: 1.5px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text, #1e293b);
+  cursor: pointer;
+  transition: all .15s;
+}
+.preset-btn:hover {
+  border-color: var(--primary, #3b82f6);
+  color: var(--primary, #3b82f6);
+  background: rgba(59,130,246,.04);
+}
+.preset-btn--all {
+  border-color: var(--primary, #3b82f6);
+  color: var(--primary, #3b82f6);
+  background: rgba(59,130,246,.06);
+  font-weight: 700;
+}
+.preset-btn--all:hover { background: rgba(59,130,246,.12); }
+.preset-btn--nature { color: #7c3aed; border-color: #ddd6fe; background: #faf5ff; }
+.preset-btn--nature:hover { border-color: #7c3aed; background: #f3e8ff; }
+.preset-btn--pack {
+  text-align: left;
+  padding: .45rem .85rem;
+  font-size: .84rem;
+}
+
+/* ── Groups panel ── */
+.groups-panel {
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 1.1rem;
+  position: sticky;
+  top: 4.5rem;
+}
+.groups-panel__title {
+  font-size: .82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted, #64748b);
+  margin: 0 0 .85rem;
+}
+.groups-list { display: flex; flex-direction: column; gap: .4rem; }
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem 0;
+}
+.group-row--empty { opacity: .45; }
+.group-row__tags { display: flex; gap: .3rem; flex-shrink: 0; }
+.gtag {
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .15rem .45rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.gtag--chain { background: #e0f2fe; color: #0369a1; }
+.gtag--nature { background: #f1f5f9; color: #475569; }
+.gtag--elec   { background: #fef9c3; color: #854d0e; }
+.gtag--meca   { background: #dcfce7; color: #166534; }
+.gtag--expl   { background: #fee2e2; color: #991b1b; }
+.gtag--sgx    { background: #ede9fe; color: #5b21b6; }
+.group-row__bar {
+  flex: 1;
+  height: 5px;
+  background: var(--bg-subtle, #f1f5f9);
+  border-radius: 99px;
+  overflow: hidden;
+  min-width: 30px;
+}
+.group-row__fill {
+  height: 100%;
+  background: var(--primary, #3b82f6);
+  border-radius: 99px;
+  opacity: .55;
+}
+.group-row__count {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  min-width: 1.5ch;
+  text-align: right;
+  flex-shrink: 0;
+}
+.groups-panel__total {
+  margin: .85rem 0 0;
+  font-size: .78rem;
+  color: var(--text-muted, #64748b);
+  padding-top: .75rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+
+/* ── Buttons ── */
+.button--sm { padding: .35rem .75rem; font-size: .82rem; }
+.button--ghost {
+  background: none;
+  border: 1.5px solid var(--border, #e2e8f0);
+  color: var(--text-muted, #64748b);
+  border-radius: 7px;
+  font-size: .85rem;
+  font-weight: 500;
+  padding: .4rem .85rem;
+  cursor: pointer;
+  transition: all .15s;
+}
+.button--ghost:hover { border-color: var(--text-muted, #64748b); color: var(--text, #1e293b); }
+
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-backdrop.is-open { display: flex; }
+.modal {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.25);
+  max-width: 740px;
+  width: 100%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .9rem 1.2rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.modal__header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.modal__close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-muted, #64748b);
+  padding: .25rem .4rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+.modal__close:hover { background: var(--bg-subtle, #f8fafc); }
+.modal__body {
+  padding: 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+}
+.preview-spinner { padding: 2rem; font-size: .9rem; color: var(--text-muted, #64748b); }
+.preview-error { color: #c0392b; font-size: .85rem; text-align: center; }
+.preview-page { width: 100%; display: flex; flex-direction: column; gap: .3rem; }
+.preview-page + .preview-page { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border, #e2e8f0); }
+.preview-page__label { font-size: .75rem; font-weight: 600; color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: .05em; }
+</style>
+
+<!-- ── Scripts ─────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  var SESSION_ID   = {{ job_id | tojson }};
+  var DEFAULT_YEAR = {{ default_year | tojson }};
+
+  // ── Toggle all chips ──
+  document.querySelectorAll('.js-toggle-all').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var target = btn.dataset.target;
+      var boxes = document.querySelectorAll('input[name="' + target + '"]');
+      var allChecked = Array.from(boxes).every(function(b) { return b.checked; });
+      boxes.forEach(function(b) {
+        b.checked = !allChecked;
+        // Update chip style
+        var chip = b.nextElementSibling;
+        if (chip) chip.style.display = 'inline-block'; // force repaint
+      });
+    });
+  });
+
+  // ── DOM refs ──
+  var vpChain      = document.getElementById('vp-chain');
+  var vpNature     = document.getElementById('vp-nature');
+  var vpLoadBtn    = document.getElementById('vp-load-btn');
+  var vpEquipList  = document.getElementById('vp-equip-list');
+  var vpTbody      = document.getElementById('vp-equip-tbody');
+  var vpStatus     = document.getElementById('vp-load-status');
+  var overridesInput = document.getElementById('y_overrides_input');
+  var btnPreview   = document.getElementById('btn-preview');
+  var btnReset     = document.getElementById('btn-reset-axes');
+  var modal        = document.getElementById('preview-modal');
+  var modalTitle   = document.getElementById('preview-modal-title');
+  var spinner      = document.getElementById('preview-spinner');
+  var pagesEl      = document.getElementById('preview-pages');
+  var errorEl      = document.getElementById('preview-error');
+  var closeBtn     = document.getElementById('btn-preview-close');
+
+  // ── Load equipment list ──
+  vpLoadBtn.addEventListener('click', function () {
+    var chain  = vpChain.value;
+    var nature = vpNature.value;
+    var yearSel = document.querySelector('select[name="year"]');
+    var year = yearSel ? yearSel.value : DEFAULT_YEAR;
+
+    vpStatus.textContent = 'Chargement…';
+    vpEquipList.style.display = 'none';
+    vpTbody.innerHTML = '';
+    btnPreview.disabled = true;
+
+    var params = new URLSearchParams({ year: year });
+    if (chain)  params.set('chain',  chain);
+    if (nature) params.set('nature', nature);
+
+    fetch('/api/equipments/' + SESSION_ID + '?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok || !data.equipments || !data.equipments.length) {
+          vpStatus.textContent = data.error || 'Aucun équipement trouvé.';
+          return;
+        }
+        vpStatus.textContent = data.equipments.length + ' équipement(s) chargé(s).';
+
+        data.equipments.forEach(function(eq) {
+          var row = document.createElement('div');
+          row.className = 'equip-row';
+          row.innerHTML =
+            '<span class="equip-row__name" title="' + eq + '">' + eq + '</span>' +
+            '<div class="equip-row__inputs">' +
+              '<span class="equip-row__lbl">Min</span>' +
+              '<input type="number" class="vp-y-input" data-eq="' + eq + '" data-role="min" min="0" max="100" step="0.1" placeholder="auto">' +
+              '<span class="equip-row__lbl">Max</span>' +
+              '<input type="number" class="vp-y-input" data-eq="' + eq + '" data-role="max" min="0" max="100" step="0.1" placeholder="auto">' +
+            '</div>';
+          vpTbody.appendChild(row);
+        });
+
+        vpEquipList.style.display = '';
+        btnPreview.disabled = false;
+        btnPreview.title = '';
+
+        vpTbody.addEventListener('input', syncOverrides);
+        syncOverrides();
+      })
+      .catch(function(err) {
+        vpStatus.textContent = 'Erreur : ' + err;
+      });
+  });
+
+  // ── Reset axes ──
+  if (btnReset) {
+    btnReset.addEventListener('click', function() {
+      vpTbody.querySelectorAll('.vp-y-input').forEach(function(inp) {
+        inp.value = '';
+      });
+      syncOverrides();
+    });
+  }
+
+  function syncOverrides() {
+    var overrides = {};
+    var inputs = vpTbody.querySelectorAll('.vp-y-input');
+    var byEq = {};
+    inputs.forEach(function(inp) {
+      var eq = inp.getAttribute('data-eq');
+      var role = inp.getAttribute('data-role');
+      if (!byEq[eq]) byEq[eq] = [null, null];
+      var v = inp.value.trim();
+      if (v !== '') {
+        var num = parseFloat(v);
+        if (!isNaN(num)) {
+          if (role === 'min') byEq[eq][0] = num;
+          else                byEq[eq][1] = num;
+        }
+      }
+    });
+    Object.keys(byEq).forEach(function(eq) {
+      if (byEq[eq][0] !== null || byEq[eq][1] !== null) {
+        overrides[eq] = byEq[eq];
+      }
+    });
+    overridesInput.value = Object.keys(overrides).length ? JSON.stringify(overrides) : '';
+  }
+
+  // ── Modal helpers ──
+  function openModal()  { modal.classList.add('is-open');    document.body.style.overflow = 'hidden'; }
+  function closeModal() { modal.classList.remove('is-open'); document.body.style.overflow = ''; }
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+  // ── Preview (explicit button only) ──
+  var previewAbort = null;
+
+  btnPreview.addEventListener('click', function (e) {
+    e.stopPropagation();
+    syncOverrides();
+    var yearSel = document.querySelector('select[name="year"]');
+    var year    = yearSel ? yearSel.value : DEFAULT_YEAR;
+    var chain   = vpChain.value;
+    var nature  = vpNature.value;
+    var ovJson  = overridesInput.value;
+
+    var params = new URLSearchParams({ year: year });
+    if (chain)   params.set('chain',  chain);
+    if (nature)  params.set('nature', nature);
+    if (ovJson)  params.set('y_overrides', ovJson);
+
+    btnPreview.disabled = true;
+    btnPreview.textContent = 'Génération…';
+
+    spinner.style.display = '';
+    pagesEl.style.display = 'none';
+    pagesEl.innerHTML     = '';
+    errorEl.style.display = 'none';
+    modalTitle.textContent = 'Prévisualisation…';
+    openModal();
+
+    if (previewAbort) { try { previewAbort.abort(); } catch(_) {} }
+    previewAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var signal = previewAbort ? previewAbort.signal : undefined;
+
+    fetch('/api/preview/' + SESSION_ID + '?' + params.toString(), { signal: signal })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        spinner.style.display = 'none';
+        btnPreview.disabled = false;
+        btnPreview.textContent = 'Prévisualiser →';
+        if (data.ok) {
+          var images = data.images || (data.image ? [data.image] : []);
+          images.forEach(function(b64, i) {
+            var wrapper = document.createElement('div');
+            wrapper.className = 'preview-page';
+            var label = document.createElement('span');
+            label.className = 'preview-page__label';
+            label.textContent = 'Page ' + (i + 1) + ' / ' + images.length;
+            var img = document.createElement('img');
+            img.src = 'data:image/png;base64,' + b64;
+            img.alt = 'Page ' + (i + 1);
+            img.style.cssText = 'max-width:100%;border-radius:6px;display:block;';
+            wrapper.appendChild(label);
+            wrapper.appendChild(img);
+            pagesEl.appendChild(wrapper);
+          });
+          pagesEl.style.display = 'block';
+          modalTitle.textContent = data.group
+            ? (data.group + ' — ' + data.year + ' (' + images.length + ' page' + (images.length > 1 ? 's' : '') + ')')
+            : 'Aperçu';
+        } else {
+          errorEl.textContent = data.error || 'Erreur inconnue.';
+          errorEl.style.display = 'block';
+        }
+      })
+      .catch(function(err) {
+        if (err && err.name === 'AbortError') return;
+        spinner.style.display = 'none';
+        btnPreview.disabled = false;
+        btnPreview.textContent = 'Prévisualiser →';
+        errorEl.textContent = 'Connexion impossible : ' + err;
+        errorEl.style.display = 'block';
+      });
+  });
+
+  // ── bfcache reset ──
+  window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+      closeModal();
+      spinner.style.display = '';
+      pagesEl.style.display = 'none';
+      pagesEl.innerHTML = '';
+      errorEl.style.display = 'none';
+      btnPreview.disabled = false;
+      btnPreview.textContent = 'Prévisualiser →';
+      if (previewAbort) { try { previewAbort.abort(); } catch(_) {} previewAbort = null; }
+    }
+  });
+})();
+</script>
 
 {% endblock %}

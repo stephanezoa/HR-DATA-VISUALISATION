@@ -76,6 +76,17 @@ TARGET_BAND_COLOR = "#D9F0D8"
 PDF_FOOTER_COLOR = "#9CA3AF"
 PDF_HEADER_BG = "#1E3A5F"
 
+# ── A4 portrait layout ───────────────────────────────────────────────────────
+A4_W: float = 8.27    # inches (210 mm)
+A4_H: float = 11.69   # inches (297 mm)
+CHARTS_PER_PAGE: int = 4
+
+# Badge colours for the new portrait layout
+FLOP_BADGE_BG = UPPER_LIMIT_COLOR   # "#D62828"  red  — upper limit
+TOP_BADGE_BG  = TRP_COLOR           # "#118AB2"  blue — lower limit
+PAGE_BADGE_BG = CHAIN_COLOR         # "#2A9D8F"  teal — page number
+STRIP_LINE_COLOR = MACHINE_COLOR    # "#0F4C81"  dark-blue — main data line
+
 
 @dataclass(frozen=True)
 class GroupKey:
@@ -1114,6 +1125,335 @@ def plot_dashboard_page(
     return fig
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# A4 PORTRAIT LAYOUT — helper functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _annotate_data_points(
+    ax: plt.Axes,
+    weeks: list[int],
+    values: list[float],
+    fontsize: float = 6.0,
+) -> None:
+    """Place percentage labels at each valid data point, alternating above/below."""
+    step = 1 if len(weeks) <= 26 else 2
+    for idx, (week, val) in enumerate(zip(weeks, values)):
+        if idx % step != 0:
+            continue
+        if val is None or pd.isna(val):
+            continue
+        is_above = (idx // step) % 2 == 0
+        yoff = 5 if is_above else -5
+        va = "bottom" if is_above else "top"
+        ax.annotate(
+            f"{val * 100:.2f}%",
+            xy=(week, val),
+            xytext=(0, yoff),
+            textcoords="offset points",
+            ha="center",
+            va=va,
+            fontsize=fontsize,
+            color="#1E3A5F",
+            clip_on=False,
+            zorder=5,
+        )
+
+
+def _draw_flop_top(
+    ax: plt.Axes,
+    upper: float | None,
+    lower: float | None,
+) -> None:
+    """Draw FLOP (upper-limit) and TOP (lower-limit) badges to the right of the axes."""
+    common_kw: dict = dict(
+        transform=ax.transAxes,
+        fontsize=7,
+        fontweight="bold",
+        color="white",
+        ha="left",
+        clip_on=False,
+    )
+    if upper is not None:
+        ax.text(
+            1.015, 0.97,
+            f"FLOP\n▼\n{upper * 100:.1f}%",
+            va="top",
+            bbox={"boxstyle": "round,pad=0.35", "facecolor": FLOP_BADGE_BG, "edgecolor": "none"},
+            **common_kw,
+        )
+    if lower is not None:
+        ax.text(
+            1.015, 0.03,
+            f"TOP\n▲\n{lower * 100:.1f}%",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.35", "facecolor": TOP_BADGE_BG, "edgecolor": "none"},
+            **common_kw,
+        )
+
+
+def _add_portrait_header(
+    fig: plt.Figure,
+    label: str,
+    page_number: int,
+) -> None:
+    """Add a dark-blue header band and a teal page-number badge to the figure."""
+    ax_hdr = fig.add_axes([0.0, 0.938, 1.0, 0.055])
+    ax_hdr.set_facecolor(PDF_HEADER_BG)
+    ax_hdr.set_axis_off()
+    ax_hdr.text(
+        0.015, 0.5, label,
+        transform=ax_hdr.transAxes,
+        color="white", fontsize=10, fontweight="bold", va="center",
+    )
+    fig.text(
+        0.955, 0.961, str(page_number),
+        ha="center", va="center",
+        fontsize=9, fontweight="bold", color="white",
+        bbox={"boxstyle": "circle,pad=0.4", "facecolor": PAGE_BADGE_BG, "edgecolor": "none"},
+        zorder=10,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A4 PORTRAIT LAYOUT — single-strip chart
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def plot_equipment_strip(
+    ax: plt.Axes,
+    frame: pd.DataFrame,
+    title: str,
+    lower: float | None,
+    upper: float | None,
+    y_override: tuple[float | None, float | None] | None = None,
+) -> None:
+    """Render one equipment's weekly taux as a labelled line chart (portrait style).
+
+    Args:
+        y_override: Per-equipment (min, max) override tuple (0–1 fraction). None = auto.
+    """
+    if frame.empty:
+        draw_empty_panel(ax, title)
+        return
+
+    weeks = frame["week_num"].astype(int).tolist()
+    values = frame["value"].tolist()
+    valid_vals = [v for v in values if v is not None and not pd.isna(v)]
+
+    if not valid_vals:
+        draw_empty_panel(ax, title)
+        return
+
+    setup_metric_axis(ax, title)
+
+    # Target / limit lines (dashed, no filled band — too heavy in compact strips)
+    if upper is not None:
+        ax.axhline(upper, color=UPPER_LIMIT_COLOR, linewidth=1.2, linestyle="--", zorder=2)
+    if lower is not None:
+        ax.axhline(lower, color=LOWER_LIMIT_COLOR, linewidth=1.2, linestyle="--", zorder=2)
+
+    # Main series
+    ax.plot(
+        weeks, values,
+        color=STRIP_LINE_COLOR, linewidth=2.0,
+        marker="o", markersize=3.5,
+        zorder=3,
+    )
+
+    # Per-point labels
+    _annotate_data_points(ax, weeks, values)
+
+    # FLOP / TOP badges
+    _draw_flop_top(ax, upper, lower)
+
+    # X-axis weeks, rotated 45°
+    configure_week_axis(ax, weeks)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=6.5)
+    ax.set_xlabel("")  # suppress label to save vertical space
+
+    # Y-axis: per-equipment manual override or auto-scale
+    if y_override is not None:
+        ov_min, ov_max = y_override
+        if ov_min is not None or ov_max is not None:
+            auto_max = max(valid_vals)
+            bottom = ov_min if ov_min is not None else 0.0
+            top = ov_max if ov_max is not None else min(1.0, auto_max * 1.5 + 0.005)
+            ax.set_ylim(bottom=bottom, top=top)
+        else:
+            ymax = max(valid_vals)
+            ax.set_ylim(bottom=0.0, top=min(1.0, ymax * 1.5 + 0.005))
+    else:
+        ymax = max(valid_vals)
+        ax.set_ylim(bottom=0.0, top=min(1.0, ymax * 1.5 + 0.005))
+    ax.tick_params(axis="y", labelsize=6.5)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A4 PORTRAIT LAYOUT — equipment page (4 strips per page)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def plot_equipment_page_portrait(
+    dataset: WorkbookDataset,
+    year: int,
+    group: GroupKey,
+    equipments_on_page: Sequence[str],
+    page_number: int,
+    y_overrides: dict[str, tuple[float | None, float | None]] | None = None,
+) -> plt.Figure:
+    """Create an A4 portrait page with up to CHARTS_PER_PAGE equipment strip charts."""
+    fig = plt.figure(figsize=(A4_W, A4_H))
+    fig.patch.set_facecolor("white")
+
+    _add_portrait_header(
+        fig,
+        f"{group.chain}  ·  {group.nature}  ·  {year}",
+        page_number,
+    )
+
+    grid = fig.add_gridspec(
+        CHARTS_PER_PAGE, 1,
+        hspace=0.65,
+        left=0.09, right=0.87, top=0.928, bottom=0.04,
+    )
+
+    for slot, equipment in enumerate(equipments_on_page):
+        ax = fig.add_subplot(grid[slot])
+        eq_frame = dataset.series_for_equipment(year, group, equipment)
+        eq_lower, eq_upper = dataset.limit_for_equipment(group, equipment)
+        eq_override = y_overrides.get(equipment) if y_overrides else None
+        plot_equipment_strip(ax, eq_frame, equipment, eq_lower, eq_upper, y_override=eq_override)
+
+    # Hide unused slots
+    for slot in range(len(equipments_on_page), CHARTS_PER_PAGE):
+        ax = fig.add_subplot(grid[slot])
+        ax.set_visible(False)
+
+    add_pdf_footer(fig, dataset.workbook_path.name, f"{group.chain} / {group.nature} — {year}")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A4 PORTRAIT LAYOUT — summary page (chain total + cumul + TRP + TRG)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _setup_strip_axes(ax: plt.Axes) -> None:
+    """Apply compact tick styling to a summary-strip axes."""
+    ax.tick_params(axis="x", labelsize=6.5, rotation=45)
+    ax.tick_params(axis="y", labelsize=6.5)
+    ax.set_xlabel("")
+
+
+def plot_chain_summary_portrait(
+    dataset: WorkbookDataset,
+    year: int,
+    group: GroupKey,
+    page_number: int,
+) -> plt.Figure:
+    """
+    A4 portrait summary page with four charts stacked:
+      1. Total chain weekly taux (bar)
+      2. Cumulative group/nature taux (line)
+      3. TRP (line)
+      4. TRG (line)
+    """
+    fig = plt.figure(figsize=(A4_W, A4_H))
+    fig.patch.set_facecolor("white")
+
+    _add_portrait_header(
+        fig,
+        f"SYNTHÈSE  ·  {group.chain}  ·  {group.nature}  ·  {year}",
+        page_number,
+    )
+
+    grid = fig.add_gridspec(
+        4, 1,
+        hspace=0.65,
+        left=0.09, right=0.87, top=0.928, bottom=0.04,
+    )
+
+    # ── 1. Total chain bar ───────────────────────────────────────────────────
+    total_series = dataset.series_for_group_total(year, group)
+    group_lower, group_upper = dataset.limit_for_group(group)
+    ax1 = fig.add_subplot(grid[0])
+    plot_bar_metric(
+        ax=ax1,
+        frame=total_series,
+        title=f"Taux total chaîne — {group.chain}",
+        bar_label=f"Taux {group.chain}",
+        bar_color=CHAIN_COLOR,
+        lower=group_lower, upper=group_upper,
+        previous_year_avg=dataset.previous_year_average_for_chain(year, group.chain),
+        current_year_avg=dataset.current_year_average_for_chain(year, group.chain),
+    )
+    _setup_strip_axes(ax1)
+    if not total_series.empty:
+        _annotate_data_points(ax1, total_series["week_num"].tolist(), total_series["value"].tolist())
+    _draw_flop_top(ax1, group_upper, group_lower)
+
+    # ── 2. Cumulative group/nature line ──────────────────────────────────────
+    cumul_series = dataset.cumulative_for_group_nature(year, group)
+    ax2 = fig.add_subplot(grid[1])
+    plot_line_metric(
+        ax=ax2,
+        frame=cumul_series,
+        title=f"Taux cumulatif — {group.chain} / {group.nature}",
+        series_label="Cumul glissant",
+        series_color=CUMUL_COLOR,
+        lower=None, upper=None,
+        previous_year_avg=dataset.previous_year_average_for_group(year, group),
+        current_year_avg=dataset.current_year_average_for_group(year, group),
+    )
+    _setup_strip_axes(ax2)
+    if not cumul_series.empty:
+        _annotate_data_points(ax2, cumul_series["week_num"].tolist(), cumul_series["value"].tolist())
+    _draw_flop_top(ax2, group_upper, group_lower)
+
+    # ── 3. TRP ───────────────────────────────────────────────────────────────
+    trp_series = dataset.trp_for_chain(year, group.chain)
+    trp_lower, trp_upper = dataset.trp_limits_for_chain(group.chain)
+    ax3 = fig.add_subplot(grid[2])
+    plot_line_metric(
+        ax=ax3,
+        frame=trp_series,
+        title=f"TRP — {group.chain}",
+        series_label="TRP",
+        series_color=TRP_COLOR,
+        lower=trp_lower, upper=trp_upper,
+    )
+    _setup_strip_axes(ax3)
+    if not trp_series.empty:
+        _annotate_data_points(ax3, trp_series["week_num"].tolist(), trp_series["value"].tolist())
+    _draw_flop_top(ax3, trp_upper, trp_lower)
+
+    # ── 4. TRG ───────────────────────────────────────────────────────────────
+    trg_series = dataset.trg_for_chain(year, group.chain)
+    trg_lower, trg_upper = dataset.trg_limits_for_chain(group.chain)
+    ax4 = fig.add_subplot(grid[3])
+    plot_line_metric(
+        ax=ax4,
+        frame=trg_series,
+        title=f"TRG — {group.chain}",
+        series_label="TRG",
+        series_color=TRG_COLOR,
+        lower=trg_lower, upper=trg_upper,
+    )
+    _setup_strip_axes(ax4)
+    if not trg_series.empty:
+        _annotate_data_points(ax4, trg_series["week_num"].tolist(), trg_series["value"].tolist())
+    _draw_flop_top(ax4, trg_upper, trg_lower)
+
+    add_pdf_footer(fig, dataset.workbook_path.name, f"Synthèse {group.chain} / {group.nature} — {year}")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GROUP PDF — new A4 portrait layout
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def save_group_pdf(
     pdf_path: Path,
     dataset: WorkbookDataset,
@@ -1121,17 +1461,25 @@ def save_group_pdf(
     group: GroupKey,
     equipments: Sequence[str],
     include_overview: bool,
+    y_overrides: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> None:
     with PdfPages(pdf_path) as pdf:
-        if include_overview:
-            overview = plot_overview_page(dataset, year, group)
-            pdf.savefig(overview, bbox_inches="tight")
-            plt.close(overview)
+        page_number = 1
 
-        for equipment in equipments:
-            figure = plot_dashboard_page(dataset, year, group, equipment)
-            pdf.savefig(figure, bbox_inches="tight")
-            plt.close(figure)
+        # Summary page first (replaces the old overview)
+        if include_overview:
+            summary_fig = plot_chain_summary_portrait(dataset, year, group, page_number)
+            pdf.savefig(summary_fig, bbox_inches="tight", dpi=150)
+            plt.close(summary_fig)
+            page_number += 1
+
+        # Equipment pages — 4 strips per A4 page
+        for batch_start in range(0, len(equipments), CHARTS_PER_PAGE):
+            batch = list(equipments[batch_start : batch_start + CHARTS_PER_PAGE])
+            eq_fig = plot_equipment_page_portrait(dataset, year, group, batch, page_number, y_overrides=y_overrides)
+            pdf.savefig(eq_fig, bbox_inches="tight", dpi=150)
+            plt.close(eq_fig)
+            page_number += 1
 
     print(f"PDF genere: {pdf_path}")
 
@@ -1149,6 +1497,7 @@ def generate_reports(
     include_overview: bool,
     grouped_subdirs: bool = False,
     progress_cb: ProgressCallback | None = None,
+    y_overrides: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> list[Path]:
     def _cb(pct: int, msg: str) -> None:
         if progress_cb is not None:
@@ -1201,18 +1550,23 @@ def generate_reports(
                     group=group,
                     equipments=equipments,
                     include_overview=include_overview,
+                    y_overrides=y_overrides,
                 )
                 generated_files.append(group_pdf_path)
 
             if combined_pdf is not None:
+                combined_page = 1
                 if include_overview:
-                    overview = plot_overview_page(dataset, year, group)
-                    combined_pdf.savefig(overview, bbox_inches="tight")
-                    plt.close(overview)
-                for equipment in equipments:
-                    figure = plot_dashboard_page(dataset, year, group, equipment)
-                    combined_pdf.savefig(figure, bbox_inches="tight")
-                    plt.close(figure)
+                    summary_fig = plot_chain_summary_portrait(dataset, year, group, combined_page)
+                    combined_pdf.savefig(summary_fig, bbox_inches="tight", dpi=150)
+                    plt.close(summary_fig)
+                    combined_page += 1
+                for batch_start in range(0, len(equipments), CHARTS_PER_PAGE):
+                    batch = list(equipments[batch_start : batch_start + CHARTS_PER_PAGE])
+                    eq_fig = plot_equipment_page_portrait(dataset, year, group, batch, combined_page, y_overrides=y_overrides)
+                    combined_pdf.savefig(eq_fig, bbox_inches="tight", dpi=150)
+                    plt.close(eq_fig)
+                    combined_page += 1
 
         _cb(92, "Assemblage du document final…")
         if combined_pdf is not None:
@@ -1223,6 +1577,59 @@ def generate_reports(
 
     _cb(98, "Finalisation…")
     return generated_files
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PREVIEW — generate a single PNG page in memory (for web preview)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def generate_preview_png(
+    dataset: WorkbookDataset,
+    year: int,
+    group: GroupKey,
+    y_overrides: dict[str, tuple[float | None, float | None]] | None = None,
+    dpi: int = 80,
+) -> list[bytes]:
+    """Return a list of PNG bytes — one per page — for *group* (portrait A4).
+
+    Renders ALL equipment pages (and the summary page if present) so the web
+    preview shows the complete output, not just the first batch.
+    Used by the web preview endpoint — no file written to disk.
+    """
+    import io
+
+    pages: list[bytes] = []
+    equipments = dataset.equipments_for_group(year, group, None)
+
+    page_number = 1
+
+    # Summary page
+    try:
+        summary_fig = plot_chain_summary_portrait(dataset, year, group, page_number)
+        buf = io.BytesIO()
+        summary_fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+        plt.close(summary_fig)
+        buf.seek(0)
+        pages.append(buf.read())
+        page_number += 1
+    except Exception:
+        pass
+
+    # Equipment pages (all batches)
+    for batch_start in range(0, max(len(equipments), 1), CHARTS_PER_PAGE):
+        batch = list(equipments[batch_start : batch_start + CHARTS_PER_PAGE])
+        if not batch:
+            break
+        fig = plot_equipment_page_portrait(dataset, year, group, batch, page_number=page_number, y_overrides=y_overrides)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        pages.append(buf.read())
+        page_number += 1
+
+    return pages
 
 
 def main() -> None:

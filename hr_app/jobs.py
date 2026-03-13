@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from generate_arrets_reports import DEFAULT_FOCUS_NATURES, generate_reports, slugify
+from generate_arrets_reports import DEFAULT_FOCUS_NATURES, generate_reports, generate_preview_png, slugify
 
 from .analysis import get_workbook_dataset
 from .config import ARCHIVE_DIR, JOB_DIR, JOB_STATE_NAME
@@ -387,6 +387,7 @@ def run_generation(
     output_dir: Path,
     session_path: Path,
     run_path: Path,
+    y_overrides: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> None:
     def callback(percent: int, message: str) -> None:
         job_set(job_id, percent=percent, step=message)
@@ -445,6 +446,7 @@ def run_generation(
                     include_overview=include_overview,
                     grouped_subdirs=(mode != "combined" and task_count == 1 and task.slug == "selection"),
                     progress_cb=callback if task_count == 1 and task.slug == "selection" else task_callback,
+                    y_overrides=y_overrides,
                 )
                 generated.extend(rename_task_outputs(task_generated, task, resolved_year))
 
